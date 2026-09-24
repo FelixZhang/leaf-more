@@ -35,6 +35,7 @@
   - `syntax.rs`  :  syntect code highlighting and language resolution
   - `fences.rs`  :  code fence normalization (nested fences, tilde fences)
   - `links.rs`  :  link span detection and construction
+  - `images.rs`  :  Markdown image block metadata, aspect-aware height calculation, and text placeholder layout
   - `tables.rs`  :  table construction, event handling, and rendering
   - `table_layout.rs`  :  table cell sizing, wrapping, and alignment algorithms
   - `latex.rs`  :  LaTeX-to-Unicode conversion: `unicodeit` + postprocessing for `\frac`, `\sqrt`, `^{}`, `_{}`
@@ -87,6 +88,12 @@
   - ANSI/plain format resolution and line wrapping
   - ratatui Style-to-ANSI escape code serialization
 
+- `src/image_runtime.rs`
+  - Kitty-only capability detection and terminal protocol setup
+  - local image path resolution, safety limits, and decode cache keys
+  - background image decode/resize/encode worker and result polling
+  - scroll-aware Kitty `SlicedImage` placement inside the TUI content area
+
 - `src/terminal.rs`
   - raw mode / alternate screen lifecycle
   - terminal restore guarantees
@@ -105,6 +112,8 @@
   - `markdown_blocks.rs`  :  headings, TOC, blockquotes, code blocks, rules
   - `markdown_embedded.rs`  :  LaTeX and Mermaid rendering tests
   - `markdown_links.rs`  :  link detection and search highlight tests
+  - `markdown_images.rs`  :  image block parsing, context prefixes, table/footnote fallback, and source-line mapping
+  - `image_runtime.rs`  :  Kitty detection, remote-source rejection, safe decode, and TestBackend placeholder rendering
   - `toc.rs`  :  TOC extraction, normalization, active section tracking, and display level tests
   - `editor.rs`  :  editor detection and classification
   - `render.rs`  :  table and code block border alignment
@@ -121,14 +130,15 @@
    - a file argument, or
    - `stdin`, or
    - the file picker if no input is provided interactively.
-3. `markdown/` parses the source into rendered lines + TOC.
-4. If `--inline` is active, `inline.rs` writes lines to stdout and exits.
-5. `App` stores the state and caches.
-6. `runtime.rs` runs the event loop:
+3. `markdown/` parses the source into rendered lines, TOC, link spans, code blocks, and image block metadata. Local image headers are probed for dimensions so each image reserves an aspect-aware text placeholder area before full decoding begins.
+4. If `--inline` is active, `inline.rs` writes the text representation to stdout and exits; Kitty image sequences are intentionally excluded from this path.
+5. `App` stores the state, image blocks, and the Kitty image runtime.
+6. After terminal initialization, `image_runtime.rs` detects Kitty only when the document contains renderable local images. The runtime queues visible images to its background worker and polls completed protocol states from the main event loop.
+7. `runtime.rs` runs the event loop:
    - processes the pending picker queue and spawns the loading thread
-   - polls picker loading, installing results when ready
+   - polls picker loading and image worker results, installing them when ready
    - handles input events through mode-aware branching
-7. `render/` draws each frame from `App`.
+8. `render/` draws each frame from `App`: text first, visible Kitty image slices second, and scrollbar/chrome last.
 
 ## Application modes
 
@@ -147,8 +157,13 @@
 
 - document reload / open:
   - source changes
-  - rendered lines and TOC are rebuilt
-  - caches are refreshed
+  - rendered lines, TOC, and image block metadata are rebuilt
+  - caches are refreshed and image base paths are updated
+
+- image load:
+  - visible local images are fingerprinted by path, file metadata, and target cell size
+  - changed or newly visible images are decoded and Kitty-encoded in the background
+  - failed, remote, SVG, oversized, and non-Kitty images retain the text placeholder
 
 - resize:
   - effective render width is recomputed

@@ -102,6 +102,9 @@ pub(crate) fn run(
         if app.poll_history_errors() {
             needs_redraw = true;
         }
+        if app.poll_image_results() {
+            needs_redraw = true;
+        }
 
         let current_title_filename = app.title_filename();
         if current_title_filename != last_title_filename.as_deref() {
@@ -148,6 +151,7 @@ pub(crate) fn run(
             } else {
                 None
             },
+            app.image_poll_delay(),
             flash_timeout,
             editor_flash_timeout,
             watch_flash_timeout,

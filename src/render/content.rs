@@ -101,6 +101,7 @@ pub(super) fn render_content_panel(f: &mut Frame, app: &mut App, area: Rect) {
             .wrap(Wrap { trim: false }),
         content_area,
     );
+    app.render_images(f, content_area);
 
     let (mouse_col, mouse_row) = app.mouse_position;
     let sb_x = area.x + area.width - SCROLLBAR_WIDTH;

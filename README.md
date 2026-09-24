@@ -169,6 +169,20 @@ claude "explain Rust lifetimes" | leaf
 cat TESTING.md | leaf
 ```
 
+## Inline Images (Kitty TUI)
+
+When running the interactive TUI in [Kitty](https://sw.kovidgoyal.net/kitty/), Leaf renders local Markdown images with Kitty's graphics protocol:
+
+```markdown
+![Architecture diagram](images/architecture.png)
+```
+
+Supported formats are PNG, JPEG, GIF, and WebP. Animated images display their first frame. Relative paths are resolved from the Markdown file's directory; files read from stdin are resolved from the current working directory.
+
+Images are decoded and encoded in a background worker, then rendered inside an aspect-aware document block so scrolling, search, line numbers, TOC resizing, reloads, and terminal resizing keep working. Local image dimensions determine the reserved height, clamped to 12–40 rows; unavailable dimensions use the 12-row minimum. Missing, oversized, remote, SVG, and unsupported images keep a readable image placeholder with their alt text and source.
+
+This first stage intentionally supports only Kitty in the interactive TUI. Other terminals and `--inline` output show the same text placeholder and never receive Kitty control sequences.
+
 ## Inline Mode
 
 Render Markdown directly to **stdout** without the interactive TUI:
@@ -349,6 +363,7 @@ See [`gruvbox.toml`](gruvbox.toml) for a complete example with all available col
 - **Editor integration** : *Open the current file in your preferred editor*.
 - **Frontmatter support** : *YAML frontmatter rendered as a table (horizontal or vertical based on key count)*.
 - **Rich Markdown rendering** : *Tables, lists, blockquotes, rules, bold, italic, and strikethrough*.
+- **Kitty images** : *Local PNG, JPEG, GIF, and WebP images render in the interactive Kitty TUI with scroll-aware placeholders*.
 - **GitHub extras** : *Alert callouts, task list checkboxes, and `==mark==` text highlighting*.
 - **Inline HTML tags** : *Common inline formatting tags (`<b>`, `<i>`, `<u>`, ...) rendered with proper styling*.
 - **Extra file types** : *Open any file; code files get syntax highlighting, text files render as Markdown*.
@@ -377,6 +392,14 @@ leaf --watch notes.md
 ```
 
 ## Troubleshooting
+
+### Images remain placeholders
+
+- Confirm the interactive TUI is running in Kitty, not `--inline` mode.
+- Use a local PNG, JPEG, GIF, or WebP path; HTTP(S), data URLs, and SVG are not downloaded or rendered.
+- Relative image paths are resolved from the Markdown file's directory.
+- Images larger than 20 MiB, wider or taller than 16,384 pixels, or requiring more than 128 MiB to decode are rejected.
+- Images in tables and footnotes remain text placeholders in this first stage.
 
 ### Windows: missing Visual C++ runtime
 

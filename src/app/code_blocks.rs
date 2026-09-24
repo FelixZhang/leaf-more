@@ -1,9 +1,19 @@
 use super::{App, CodeBlockFlash};
-use crate::{clipboard::copy_to_clipboard, markdown::CodeBlockInfo};
+use crate::{
+    clipboard::copy_to_clipboard,
+    markdown::{CodeBlockInfo, ImageBlockInfo},
+};
 
 impl App {
     pub(crate) fn set_code_blocks(&mut self, code_blocks: Vec<CodeBlockInfo>) {
         self.code_blocks = code_blocks;
+    }
+
+    pub(crate) fn set_image_blocks(&mut self, image_blocks: Vec<ImageBlockInfo>) {
+        self.image_runtime.sync_blocks(&image_blocks);
+        self.image_blocks = image_blocks;
+        self.store_current_theme_preview();
+        self.try_enable_kitty_images();
     }
 
     pub(crate) fn is_code_select_mode(&self) -> bool {

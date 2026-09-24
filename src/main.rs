@@ -16,6 +16,7 @@ mod clipboard;
 mod completions;
 mod config;
 mod editor;
+mod image_runtime;
 mod inline;
 mod markdown;
 mod picker_width;
@@ -29,7 +30,9 @@ mod update;
 
 use app::{App, AppConfig};
 use cli::{parse_cli, print_usage, print_version, CliOptions};
-use markdown::{hash_str, parse_markdown, parse_markdown_with_width, read_file_state};
+use markdown::{
+    hash_str, parse_markdown_with_path, parse_markdown_with_width_and_path, read_file_state,
+};
 use runtime::run;
 use terminal::{finish_with_restore, TerminalSession};
 use theme::{
@@ -381,25 +384,23 @@ fn main() -> Result<()> {
         } else {
             anyhow::bail!("Not a valid file, directory or keyword: {}", f);
         }
-    } else {
-        if io::stdin().is_terminal() {
-            let cwd = std::env::current_dir().context("Cannot read current directory")?;
-            let label = app::path_label(&cwd);
-            if picker {
-                open_browser_picker_dir = Some(cwd);
-            } else {
-                open_fuzzy_picker_dir = Some(cwd);
-            }
-            (String::new(), label, None)
+    } else if io::stdin().is_terminal() {
+        let cwd = std::env::current_dir().context("Cannot read current directory")?;
+        let label = app::path_label(&cwd);
+        if picker {
+            open_browser_picker_dir = Some(cwd);
         } else {
-            if watch_from_cli {
-                eprintln!("Error: --watch requires a file path (stdin cannot be watched)");
-                std::process::exit(1);
-            }
-            let mut stdin = io::stdin().lock();
-            let buf = read_stdin_limited(&mut stdin, MAX_STDIN_BYTES)?;
-            (buf, "stdin".to_string(), None)
+            open_fuzzy_picker_dir = Some(cwd);
         }
+        (String::new(), label, None)
+    } else {
+        if watch_from_cli {
+            eprintln!("Error: --watch requires a file path (stdin cannot be watched)");
+            std::process::exit(1);
+        }
+        let mut stdin = io::stdin().lock();
+        let buf = read_stdin_limited(&mut stdin, MAX_STDIN_BYTES)?;
+        (buf, "stdin".to_string(), None)
     };
 
     let is_file_input = filepath.is_some();
@@ -446,7 +447,7 @@ fn main() -> Result<()> {
         let format = inline::resolve_format(spec, is_tty);
 
         let at = app_theme();
-        let mut parsed = parse_markdown_with_width(
+        let mut parsed = parse_markdown_with_width_and_path(
             &src,
             &ss,
             &theme,
@@ -454,6 +455,7 @@ fn main() -> Result<()> {
             &at.markdown,
             file_mode,
             code_line_numbers,
+            filepath.as_deref(),
         );
 
         while parsed.lines.last().is_some_and(|l| {
@@ -470,13 +472,14 @@ fn main() -> Result<()> {
     }
 
     let at = app_theme();
-    let parsed = parse_markdown(
+    let parsed = parse_markdown_with_path(
         &src,
         &ss,
         &theme,
         &at.markdown,
         file_mode,
         code_line_numbers,
+        filepath.as_deref(),
     );
     let crate::markdown::ParseResult {
         lines,
@@ -485,6 +488,7 @@ fn main() -> Result<()> {
         line_number_map,
         source_line_map,
         code_blocks,
+        image_blocks,
     } = parsed;
     let mut app = App::new_with_source(
         lines,
@@ -500,6 +504,7 @@ fn main() -> Result<()> {
     );
     app.set_link_spans(link_spans);
     app.set_code_blocks(code_blocks);
+    app.set_image_blocks(image_blocks);
     app.set_line_maps(line_number_map, source_line_map);
     app.set_last_content_hash(last_content_hash);
     app.set_watch_from_config(watch_from_config);
@@ -554,6 +559,8 @@ fn main() -> Result<()> {
     runtime::debug_log(debug_input, "terminal enter start");
     let mut session = TerminalSession::enter(&mut stdout)?;
     runtime::debug_log(debug_input, "terminal enter done");
+    let kitty_images = app.initialize_kitty_images();
+    runtime::debug_log(debug_input, &format!("kitty images enabled={kitty_images}"));
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout))?;
     runtime::debug_log(debug_input, "terminal new done");
     terminal.backend_mut().clear_region(ClearType::All)?;

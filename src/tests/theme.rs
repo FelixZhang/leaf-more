@@ -157,6 +157,49 @@ fn theme_picker_restores_original_preset_on_escape() {
 }
 
 #[test]
+fn theme_preview_and_restore_preserve_image_blocks() {
+    let _guard = lock_theme_test_state();
+    let (ss, theme) = test_assets();
+    let ts = ThemeSet::load_defaults();
+    let source = "![diagram](diagram.png)\n";
+    let parsed = parse_markdown(source, &ss, &theme, &test_md_theme(), false, true);
+    let image_blocks = parsed.image_blocks.clone();
+    let crate::markdown::ParseResult {
+        lines,
+        toc,
+        image_blocks: parsed_image_blocks,
+        ..
+    } = parsed;
+    assert_eq!(parsed_image_blocks, image_blocks);
+    let mut app = App::new_with_source(
+        lines,
+        toc,
+        AppConfig {
+            filename: "stdin".to_string(),
+            source: source.to_string(),
+            debug_input: false,
+            watch: false,
+            filepath: None,
+            last_file_state: None,
+        },
+    );
+    app.set_image_blocks(image_blocks);
+
+    let original = current_theme_selection();
+    set_theme_preset(ThemePreset::OceanDark);
+    app.open_theme_picker();
+    app.preview_theme_preset(ThemePreset::Forest, &ss, &ts);
+    assert_eq!(app.image_blocks[0].source, "diagram.png");
+
+    app.preview_theme_preset(ThemePreset::OceanDark, &ss, &ts);
+    assert_eq!(app.image_blocks[0].source, "diagram.png");
+
+    app.restore_theme_picker_preview(&ss, &ts);
+    assert_eq!(app.image_blocks[0].source, "diagram.png");
+    set_theme_selection(original);
+}
+
+#[test]
 fn theme_picker_caches_previewed_themes_for_reuse() {
     let _guard = lock_theme_test_state();
     let (ss, theme) = test_assets();

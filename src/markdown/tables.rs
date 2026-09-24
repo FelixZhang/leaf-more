@@ -6,7 +6,9 @@ use ratatui::{
 };
 
 use super::latex;
-use super::spans::{normalize_html_tag, HtmlBufferKind, HtmlTagName, HtmlTagOutcome};
+use super::spans::{
+    image_alt_html_text, normalize_html_tag, HtmlBufferKind, HtmlTagName, HtmlTagOutcome,
+};
 use super::table_layout::{
     align_cell, cap_table_widths, fit_table_widths, fragments_display_width, min_table_cell_width,
     wrap_table_cell,
@@ -48,6 +50,13 @@ pub(super) enum CellFragment {
     InlineMath(String, bool),
     LinkMarker(CellInlineStyle),
     Mark(String, bool),
+    Image {
+        alt: String,
+        source: String,
+        title: String,
+        style: CellInlineStyle,
+        adjacent: bool,
+    },
     HardBreak,
 }
 
@@ -58,6 +67,7 @@ impl CellFragment {
                 t.clone()
             }
             CellFragment::InlineMath(t, _) => latex::to_unicode(t),
+            CellFragment::Image { alt, .. } => alt.clone(),
             CellFragment::LinkMarker(_) => super::with_link_marker(|m| m.to_string()),
             CellFragment::HardBreak => String::new(),
         }
@@ -66,14 +76,19 @@ impl CellFragment {
     pub(super) fn display_width(&self) -> usize {
         let w = display_width(&self.rendered_text());
         match self {
-            CellFragment::Text(_, _, _) | CellFragment::LinkMarker(_) => w,
+            CellFragment::Text(_, _, _)
+            | CellFragment::LinkMarker(_)
+            | CellFragment::Image { .. } => w,
             CellFragment::HardBreak => 0,
             _ => w + 2,
         }
     }
 
     pub(super) fn is_text(&self) -> bool {
-        matches!(self, CellFragment::Text(_, _, _))
+        matches!(
+            self,
+            CellFragment::Text(_, _, _) | CellFragment::Image { .. }
+        )
     }
 }
 
@@ -88,6 +103,13 @@ pub(super) struct TableBuf {
     html_style_buffer: Option<(HtmlBufferKind, String)>,
     key_column: Option<usize>,
     fill_width: bool,
+    image: Vec<TableImageState>,
+}
+
+struct TableImageState {
+    alt: String,
+    source: String,
+    title: String,
 }
 
 struct TableBorder<'a> {
@@ -107,18 +129,75 @@ pub(super) fn handle_table_event(
     let Some(tb) = table.as_mut() else {
         return false;
     };
+    if !tb.image.is_empty()
+        && !matches!(
+            ev,
+            MdEvent::Start(Tag::Image { .. })
+                | MdEvent::End(TagEnd::Image)
+                | MdEvent::Text(_)
+                | MdEvent::Code(_)
+                | MdEvent::InlineMath(_)
+                | MdEvent::InlineHtml(_)
+                | MdEvent::SoftBreak
+                | MdEvent::HardBreak
+        )
+    {
+        return true;
+    }
 
     match ev {
         MdEvent::Text(t) => {
-            tb.push_text(t.as_ref());
+            if let Some(image) = tb.image.last_mut() {
+                image.alt.push_str(t.as_ref());
+            } else {
+                tb.push_text(t.as_ref());
+            }
+            true
+        }
+        MdEvent::Start(Tag::Image {
+            dest_url, title, ..
+        }) => {
+            tb.image.push(TableImageState {
+                alt: String::new(),
+                source: dest_url.to_string(),
+                title: title.to_string(),
+            });
+            true
+        }
+        MdEvent::End(TagEnd::Image) => {
+            if let Some(image) = tb.image.pop() {
+                if let Some(parent) = tb.image.last_mut() {
+                    if !parent.alt.is_empty() && !image.alt.is_empty() {
+                        parent.alt.push(' ');
+                    }
+                    parent.alt.push_str(&image.alt);
+                } else {
+                    let adjacent = tb.prev_ends_without_ws();
+                    tb.current_cell.push(CellFragment::Image {
+                        alt: image.alt,
+                        source: image.source,
+                        title: image.title,
+                        style: tb.inline_style,
+                        adjacent,
+                    });
+                }
+            }
             true
         }
         MdEvent::Code(t) => {
-            tb.push_code(t.as_ref());
+            if let Some(image) = tb.image.last_mut() {
+                image.alt.push_str(t.as_ref());
+            } else {
+                tb.push_code(t.as_ref());
+            }
             true
         }
         MdEvent::InlineMath(t) => {
-            tb.push_inline_math(t.as_ref());
+            if let Some(image) = tb.image.last_mut() {
+                image.alt.push_str(t.as_ref());
+            } else {
+                tb.push_inline_math(t.as_ref());
+            }
             true
         }
         MdEvent::Start(Tag::TableCell) => true,
@@ -185,6 +264,13 @@ pub(super) fn handle_table_event(
             true
         }
         MdEvent::InlineHtml(raw) => {
+            if let Some(image) = tb.image.last_mut() {
+                match image_alt_html_text(raw.as_ref()) {
+                    Some(text) => image.alt.push_str(text),
+                    None => image.alt.push_str(raw.as_ref()),
+                }
+                return true;
+            }
             match handle_html_tag_event_cell(raw.as_ref(), tb) {
                 HtmlTagOutcome::Consumed => {}
                 HtmlTagOutcome::OpenStyleBuffer(kind) => {
@@ -204,6 +290,12 @@ pub(super) fn handle_table_event(
                 HtmlTagOutcome::NotRecognized => {
                     tb.push_text(raw.as_ref());
                 }
+            }
+            true
+        }
+        MdEvent::SoftBreak | MdEvent::HardBreak => {
+            if let Some(image) = tb.image.last_mut() {
+                image.alt.push(' ');
             }
             true
         }
@@ -290,6 +382,7 @@ impl TableBuf {
             html_style_buffer: None,
             key_column: None,
             fill_width: false,
+            image: Vec::new(),
         }
     }
 
@@ -317,6 +410,7 @@ impl TableBuf {
                 html_style_buffer: None,
                 key_column: Some(0),
                 fill_width: true,
+                image: Vec::new(),
             }
         } else {
             let alignments = vec![Alignment::None; pairs.len()];
@@ -339,6 +433,7 @@ impl TableBuf {
                 html_style_buffer: None,
                 key_column: None,
                 fill_width: true,
+                image: Vec::new(),
             }
         }
     }

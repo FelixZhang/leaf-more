@@ -110,6 +110,14 @@ pub(super) fn normalize_html_tag(raw: &str) -> Option<(HtmlTagName, bool)> {
     Some((classify_tag_name(name)?, is_open))
 }
 
+pub(super) fn image_alt_html_text(raw: &str) -> Option<&'static str> {
+    match normalize_html_tag(raw) {
+        Some((HtmlTagName::Br, _)) => Some(" "),
+        Some(_) => Some(""),
+        None => None,
+    }
+}
+
 pub(super) fn handle_html_tag_event(
     raw: &str,
     inline: &mut InlineStyleState,

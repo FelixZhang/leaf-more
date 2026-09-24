@@ -18,6 +18,8 @@ path = "src/main.rs"
 [dependencies]
 ratatui       = "0.30"
 crossterm     = "0.29"
+ratatui-image = { version = "11.1.0", default-features = false, features = ["crossterm"] }
+image         = { version = "0.25.10", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
 pulldown-cmark = "0.12"
 syntect       = { version = "5.2", default-features = false, features = ["default-syntaxes", "default-themes", "regex-onig"] }
 anyhow        = "1.0"

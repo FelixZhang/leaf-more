@@ -51,6 +51,19 @@ Confirm these render correctly:
 - inline math formulas with `$...$`
 - display math blocks with `$$...$$`
 
+### Kitty Images
+
+Run these checks in Kitty with `leaf TESTING.md`:
+
+- confirm the local preview image renders inside its bordered block
+- scroll down until the image is partially visible, then scroll through and past it
+- toggle line numbers and confirm the image shifts with the text gutter
+- toggle the TOC and resize the terminal; the image should reflow without stale pixels
+- reload the document and confirm the image remains stable
+- confirm the missing-image example remains a readable placeholder
+- run the same document in a non-Kitty terminal and confirm no Kitty control sequences appear
+- run `leaf --inline TESTING.md` and confirm images remain text placeholders in both ANSI and plain output
+
 ### Navigation And Search
 
 Use these keys while viewing the fixture:
@@ -140,6 +153,16 @@ Plain paragraph text should render with the default body style and spacing.
 This line mixes **bold**, *italic*, ~~strikethrough~~, and `inline code` in a single paragraph.
 
 This paragraph also includes a [link to Rust](https://www.rust-lang.org/) so link styling and the leading link marker can be checked.
+
+### Images
+
+The local image should render in Kitty and remain a bordered placeholder elsewhere.
+
+![Leaf preview](images/preview.png)
+
+The missing image should keep a readable fallback with its alt text and source.
+
+![Missing image](images/does-not-exist.png)
 
 ### Blockquote
 

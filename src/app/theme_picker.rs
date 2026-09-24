@@ -1,5 +1,5 @@
 use crate::{
-    markdown::{parse_markdown_with_width, toc::TocEntry},
+    markdown::{parse_markdown_with_width_and_path, toc::TocEntry, ImageBlockInfo},
     theme::{
         app_theme, current_syntect_theme, current_theme_selection, set_theme_preset,
         set_theme_selection, theme_preset_index, ThemePreset, ThemeSelection, THEME_PRESETS,
@@ -14,6 +14,7 @@ use super::App;
 pub(crate) struct ThemePreviewCacheEntry {
     pub(super) lines: Vec<Line<'static>>,
     pub(super) toc: Vec<TocEntry>,
+    pub(super) image_blocks: Vec<ImageBlockInfo>,
 }
 
 pub(crate) struct ThemePickerState {
@@ -33,6 +34,7 @@ impl App {
         self.theme_picker.original_preview = Some(ThemePreviewCacheEntry {
             lines: self.lines.clone(),
             toc: self.toc.clone(),
+            image_blocks: self.image_blocks.clone(),
         });
         self.store_current_theme_preview();
     }
@@ -117,13 +119,14 @@ impl App {
             self.replace_content(crate::markdown::ParseResult::preview(
                 entry.lines,
                 entry.toc,
+                entry.image_blocks,
             ));
             return;
         }
 
         let theme = current_syntect_theme(themes);
         let at = app_theme();
-        let parsed = parse_markdown_with_width(
+        let parsed = parse_markdown_with_width_and_path(
             &self.source,
             ss,
             theme,
@@ -131,8 +134,9 @@ impl App {
             &at.markdown,
             self.file_mode,
             self.code_line_numbers,
+            self.filepath.as_deref(),
         );
-        self.store_theme_preview(preset, &parsed.lines, &parsed.toc);
+        self.store_theme_preview(preset, &parsed.lines, &parsed.toc, &parsed.image_blocks);
         self.replace_content(parsed);
     }
 
@@ -143,11 +147,12 @@ impl App {
                 self.replace_content(crate::markdown::ParseResult::preview(
                     entry.lines,
                     entry.toc,
+                    entry.image_blocks,
                 ));
             } else {
                 let theme = current_syntect_theme(themes);
                 let at = app_theme();
-                let parsed = parse_markdown_with_width(
+                let parsed = parse_markdown_with_width_and_path(
                     &self.source,
                     ss,
                     theme,
@@ -155,6 +160,7 @@ impl App {
                     &at.markdown,
                     self.file_mode,
                     self.code_line_numbers,
+                    self.filepath.as_deref(),
                 );
                 self.replace_content(parsed);
             }
@@ -167,12 +173,14 @@ impl App {
         preset: ThemePreset,
         lines: &[Line<'static>],
         toc: &[TocEntry],
+        image_blocks: &[ImageBlockInfo],
     ) {
         let idx = theme_preset_index(preset);
         if let Some(slot) = self.theme_picker.preview_cache.get_mut(idx) {
             *slot = Some(ThemePreviewCacheEntry {
                 lines: lines.to_vec(),
                 toc: toc.to_vec(),
+                image_blocks: image_blocks.to_vec(),
             });
         }
     }
@@ -186,6 +194,7 @@ impl App {
             *slot = Some(ThemePreviewCacheEntry {
                 lines: self.lines.clone(),
                 toc: self.toc.clone(),
+                image_blocks: self.image_blocks.clone(),
             });
         }
     }
@@ -194,11 +203,12 @@ impl App {
         &mut self,
         lines: &[Line<'static>],
         toc: &[TocEntry],
+        image_blocks: &[ImageBlockInfo],
     ) {
         let Some(preset) = current_theme_selection().as_preset() else {
             return;
         };
-        self.store_theme_preview(preset, lines, toc);
+        self.store_theme_preview(preset, lines, toc, image_blocks);
     }
 
     pub(crate) fn invalidate_theme_preview_cache(&mut self) {

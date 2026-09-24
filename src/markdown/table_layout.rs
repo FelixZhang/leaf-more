@@ -115,6 +115,13 @@ fn rebuild_fragment(frag: &CellFragment, text: String) -> CellFragment {
     match frag {
         CellFragment::InlineMath(_, _) => CellFragment::InlineMath(text, false),
         CellFragment::Mark(_, _) => CellFragment::Mark(text, false),
+        CellFragment::Image { source, title, .. } => CellFragment::Image {
+            alt: text,
+            source: source.clone(),
+            title: title.clone(),
+            style: CellInlineStyle::default(),
+            adjacent: false,
+        },
         _ => CellFragment::Code(text, false),
     }
 }
@@ -152,7 +159,13 @@ pub(super) fn wrap_table_cell(frags: &[CellFragment], width: usize) -> Vec<Vec<C
 
     for frag in frags {
         match frag {
-            CellFragment::Text(t, style, adj) => {
+            CellFragment::Text(t, style, adj)
+            | CellFragment::Image {
+                alt: t,
+                style,
+                adjacent: adj,
+                ..
+            } => {
                 let expanded = expand_tabs(t, 0);
                 let style = *style;
                 let adj = *adj;
@@ -296,7 +309,12 @@ pub(super) fn align_cell(
 
     for frag in frags {
         match frag {
-            CellFragment::Text(t, inline, _) => {
+            CellFragment::Text(t, inline, _)
+            | CellFragment::Image {
+                alt: t,
+                style: inline,
+                ..
+            } => {
                 let expanded = expand_tabs(t, 0);
                 content_width += display_width(&expanded);
                 let mut style = base_style;

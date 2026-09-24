@@ -1,8 +1,9 @@
 use crate::{
+    image_runtime::ImageRuntime,
     markdown::{
         build_searchable_lines,
         toc::{toc_levels, TocEntry},
-        CodeBlockInfo, LinkSpan,
+        CodeBlockInfo, ImageBlockInfo, LinkSpan,
     },
     render::{build_status_bar, build_toc_line_with_index, toc_header_line},
     theme::{app_theme, current_theme_selection, theme_preset_index},
@@ -173,6 +174,8 @@ pub(crate) struct App {
     pub(crate) link_spans_by_line: HashMap<usize, Vec<LinkSpan>>,
     pub(crate) hovered_link: Option<(usize, usize)>,
     pub(crate) code_blocks: Vec<CodeBlockInfo>,
+    pub(crate) image_blocks: Vec<ImageBlockInfo>,
+    pub(crate) image_runtime: ImageRuntime,
     pub(crate) code_select: Option<usize>,
     code_block_flash: Option<(CodeBlockFlash, Instant)>,
     link_flash: Option<(LinkFlash, Instant)>,
@@ -242,6 +245,7 @@ impl App {
             filepath,
             last_file_state,
         } = config;
+        let image_runtime = ImageRuntime::new(filepath.as_deref());
         let plain_lines = build_searchable_lines(&lines)
             .into_iter()
             .map(|line| line.to_lowercase())
@@ -340,6 +344,8 @@ impl App {
             link_spans_by_line: HashMap::new(),
             hovered_link: None,
             code_blocks: Vec::new(),
+            image_blocks: Vec::new(),
+            image_runtime,
             code_select: None,
             code_block_flash: None,
             link_flash: None,

@@ -1,6 +1,6 @@
 use super::App;
 use crate::markdown::{
-    hash_file_contents, hash_str, parse_markdown_with_width, read_file_state, ParseResult,
+    hash_file_contents, hash_str, parse_markdown_with_width_and_path, read_file_state, ParseResult,
 };
 use std::{
     path::PathBuf,
@@ -34,6 +34,7 @@ impl App {
             line_number_map,
             source_line_map,
             code_blocks,
+            image_blocks,
         } = parsed;
 
         self.plain_lines = build_searchable_lines(&lines)
@@ -47,6 +48,7 @@ impl App {
         self.link_spans_by_line = super::links::link_spans_to_map(link_spans);
         self.hovered_link = None;
         self.set_code_blocks(code_blocks);
+        self.set_image_blocks(image_blocks);
         self.code_select = None;
         self.set_line_maps(line_number_map, source_line_map);
         self.refresh_static_caches();
@@ -95,7 +97,7 @@ impl App {
         self.file_mode = is_code_file;
         let theme = current_syntect_theme(themes);
         let at = app_theme();
-        let parsed = parse_markdown_with_width(
+        let parsed = parse_markdown_with_width_and_path(
             &src,
             ss,
             theme,
@@ -103,6 +105,7 @@ impl App {
             &at.markdown,
             self.file_mode,
             self.code_line_numbers,
+            Some(&path),
         );
 
         let first_load = self.filepath.is_none();
@@ -111,6 +114,7 @@ impl App {
         if let Some(n) = self.file_history_length.filter(|n| *n > 0) {
             super::history::record_open(path.clone(), n as usize);
         }
+        self.set_image_document_path(Some(&path));
         self.filepath = Some(path);
         if first_load && self.watch_from_config {
             self.watch = true;
@@ -128,7 +132,7 @@ impl App {
         self.reset_search_state();
         self.clear_active_goto_line();
         self.invalidate_theme_preview_cache();
-        self.store_current_theme_preview_from(&parsed.lines, &parsed.toc);
+        self.store_current_theme_preview_from(&parsed.lines, &parsed.toc, &parsed.image_blocks);
         self.replace_content(parsed);
         self.clear_toc_scroll_state();
         true
@@ -138,7 +142,7 @@ impl App {
         let theme = current_syntect_theme(themes);
         let at = app_theme();
         let old_total = self.total();
-        let parsed = parse_markdown_with_width(
+        let parsed = parse_markdown_with_width_and_path(
             &self.source,
             ss,
             theme,
@@ -146,6 +150,7 @@ impl App {
             &at.markdown,
             self.file_mode,
             self.code_line_numbers,
+            self.filepath.as_deref(),
         );
         let new_total = parsed.lines.len();
 
@@ -156,7 +161,7 @@ impl App {
         }
 
         self.invalidate_theme_preview_cache();
-        self.store_current_theme_preview_from(&parsed.lines, &parsed.toc);
+        self.store_current_theme_preview_from(&parsed.lines, &parsed.toc, &parsed.image_blocks);
         self.replace_content(parsed);
         self.goto_line.target = None;
         self.goto_line.error = false;

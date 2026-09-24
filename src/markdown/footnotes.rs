@@ -8,6 +8,7 @@ use ratatui::{
 use crate::theme::MarkdownTheme;
 
 use super::blocks::push_rule_line;
+use super::images::ImageBlockInfo;
 use super::latex;
 use super::lists::{ItemState, ListKind};
 use super::spans::InlineStyleState;
@@ -15,7 +16,7 @@ use super::tables::TableBuf;
 use super::toc::TocEntry;
 use super::width::display_width;
 use super::wrapping::push_wrapped_prefixed_lines;
-use super::{LastBlock, LineMapState};
+use super::{ImageParseState, LastBlock, LineMapState};
 use ratatui::style::Color;
 
 pub(super) fn to_superscript(n: usize) -> String {
@@ -48,6 +49,8 @@ pub(super) struct DefinitionSnapshot {
     pub(super) table: Option<TableBuf>,
     pub(super) last_block: LastBlock,
     pub(super) state: LineMapState,
+    pub(super) image: Vec<ImageParseState>,
+    pub(super) next_image_id: usize,
     pub(super) toc: Vec<TocEntry>,
     pub(super) link_urls: Vec<String>,
 }
@@ -69,6 +72,8 @@ impl DefinitionSnapshot {
         table: &mut Option<TableBuf>,
         last_block: &mut LastBlock,
         state: &mut LineMapState,
+        image: &mut Vec<ImageParseState>,
+        next_image_id: &mut usize,
         toc: &mut Vec<TocEntry>,
         link_urls: &mut Vec<String>,
     ) -> Self {
@@ -87,6 +92,8 @@ impl DefinitionSnapshot {
             table: std::mem::take(table),
             last_block: std::mem::replace(last_block, LastBlock::Other),
             state: std::mem::replace(state, LineMapState::new()),
+            image: std::mem::take(image),
+            next_image_id: *next_image_id,
             toc: std::mem::take(toc),
             link_urls: std::mem::take(link_urls),
         }
@@ -109,6 +116,8 @@ impl DefinitionSnapshot {
         table: &mut Option<TableBuf>,
         last_block: &mut LastBlock,
         state: &mut LineMapState,
+        image: &mut Vec<ImageParseState>,
+        next_image_id: &mut usize,
         toc: &mut Vec<TocEntry>,
         link_urls: &mut Vec<String>,
     ) {
@@ -126,6 +135,8 @@ impl DefinitionSnapshot {
         *table = self.table;
         *last_block = self.last_block;
         *state = self.state;
+        *image = self.image;
+        *next_image_id = (*next_image_id).max(self.next_image_id);
         *toc = self.toc;
         *link_urls = self.link_urls;
     }
@@ -134,6 +145,7 @@ impl DefinitionSnapshot {
 pub(super) struct ActiveDefinition {
     pub(super) label: String,
     pub(super) snapshot: DefinitionSnapshot,
+    pub(super) image_blocks: Vec<ImageBlockInfo>,
 }
 
 #[derive(Default)]
@@ -144,6 +156,7 @@ pub(super) struct FootnotesBuf {
     definitions: HashMap<String, Vec<Line<'static>>>,
     def_source_line: HashMap<String, usize>,
     def_link_urls: HashMap<String, Vec<String>>,
+    def_image_blocks: HashMap<String, Vec<ImageBlockInfo>>,
     active: Option<ActiveDefinition>,
 }
 
@@ -168,7 +181,11 @@ impl FootnotesBuf {
             self.defs_order.push(label.clone());
         }
         self.def_source_line.insert(label.clone(), src_line);
-        self.active = Some(ActiveDefinition { label, snapshot });
+        self.active = Some(ActiveDefinition {
+            label,
+            snapshot,
+            image_blocks: Vec::new(),
+        });
     }
 
     pub(super) fn finish_definition(
@@ -176,12 +193,17 @@ impl FootnotesBuf {
         captured_lines: Vec<Line<'static>>,
         captured_link_urls: Vec<String>,
     ) -> DefinitionSnapshot {
-        let ActiveDefinition { label, snapshot } = self
+        let ActiveDefinition {
+            label,
+            snapshot,
+            image_blocks,
+        } = self
             .active
             .take()
             .expect("finish_definition without active definition");
         self.definitions.insert(label.clone(), captured_lines);
-        self.def_link_urls.insert(label, captured_link_urls);
+        self.def_link_urls.insert(label.clone(), captured_link_urls);
+        self.def_image_blocks.insert(label, image_blocks);
         snapshot
     }
 
@@ -189,11 +211,18 @@ impl FootnotesBuf {
         self.active.is_some()
     }
 
+    pub(super) fn record_image_block(&mut self, block: ImageBlockInfo) {
+        if let Some(active) = self.active.as_mut() {
+            active.image_blocks.push(block);
+        }
+    }
+
     pub(super) fn flush(
         &mut self,
         lines: &mut Vec<Line<'static>>,
         state: &mut LineMapState,
         link_urls: &mut Vec<String>,
+        image_blocks: &mut Vec<ImageBlockInfo>,
         theme: &MarkdownTheme,
         render_width: usize,
     ) {
@@ -245,7 +274,13 @@ impl FootnotesBuf {
             let prefix_width = display_width(&prefix_text);
             let indent = " ".repeat(prefix_width);
             let mut first = true;
-            for def_line in def_lines {
+            let mut def_image_blocks = self.def_image_blocks.remove(&label).unwrap_or_default();
+            let image_ranges: Vec<(usize, usize)> = def_image_blocks
+                .iter()
+                .map(|block| (block.rendered_start, block.rendered_end))
+                .collect();
+            for (def_line_idx, def_line) in def_lines.into_iter().enumerate() {
+                let output_start = lines.len();
                 let mut body: Vec<Span<'static>> = def_line.spans.into_iter().collect();
                 recolor_default_text(&mut body, theme.text, theme.footnote_text);
                 if first {
@@ -275,7 +310,19 @@ impl FootnotesBuf {
                         render_width,
                     );
                 }
+                let output_end = lines.len();
+                for (block, (source_start, source_end)) in
+                    def_image_blocks.iter_mut().zip(&image_ranges)
+                {
+                    if *source_start == def_line_idx {
+                        block.rendered_start = output_start;
+                    }
+                    if *source_end == def_line_idx {
+                        block.rendered_end = output_end.saturating_sub(1);
+                    }
+                }
             }
+            image_blocks.append(&mut def_image_blocks);
             state.mark_all_new(lines.len());
             if let Some(mut urls) = self.def_link_urls.remove(&label) {
                 link_urls.append(&mut urls);

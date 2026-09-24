@@ -3,6 +3,7 @@ mod fences;
 mod footnotes;
 mod frontmatter;
 mod highlight;
+mod images;
 mod latex;
 mod links;
 mod lists;
@@ -37,7 +38,7 @@ use ratatui::{
 use std::{
     hash::{Hash, Hasher},
     io,
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 use toc::{normalize_toc, TocEntry};
 
@@ -48,6 +49,8 @@ use blocks::{
     CODE_BLOCK_GUTTER,
 };
 use fences::normalize_code_fences;
+pub(crate) use images::ImageBlockInfo;
+use images::{push_image_placeholder, ImageRenderContext};
 use links::build_link_spans;
 use lists::{
     end_item, end_list, flush_list_item_spans, list_item_prefix, start_item, start_list, ItemState,
@@ -57,8 +60,9 @@ use lists::{
 pub(crate) use lists::{TASK_CHECKED, TASK_CHECKED_ALT, TASK_UNCHECKED};
 use markers::push_custom_marker_spans;
 use spans::{
-    handle_html_tag_event, handle_inline_style_event, inline_text_style, push_inline_code_span,
-    push_inline_latex_span, push_mark_span, HtmlBufferKind, HtmlTagOutcome, InlineStyleState,
+    handle_html_tag_event, handle_inline_style_event, image_alt_html_text, inline_text_style,
+    push_inline_code_span, push_inline_latex_span, push_mark_span, HtmlBufferKind, HtmlTagOutcome,
+    InlineStyleState,
 };
 
 pub(crate) const DEFAULT_LINK_MARKER: &str = "#";
@@ -83,6 +87,14 @@ pub(super) enum LastBlock {
     Other,
     Paragraph,
     Blockquote,
+}
+
+pub(super) struct ImageParseState {
+    pub(super) id: usize,
+    pub(super) source: String,
+    pub(super) title: String,
+    pub(super) alt: String,
+    pub(super) source_line: usize,
 }
 
 pub(crate) fn hash_str(text: &str) -> u64 {
@@ -359,10 +371,15 @@ pub(crate) struct ParseResult {
     pub(crate) line_number_map: Vec<usize>,
     pub(crate) source_line_map: Vec<usize>,
     pub(crate) code_blocks: Vec<CodeBlockInfo>,
+    pub(crate) image_blocks: Vec<ImageBlockInfo>,
 }
 
 impl ParseResult {
-    pub(crate) fn preview(lines: Vec<Line<'static>>, toc: Vec<TocEntry>) -> Self {
+    pub(crate) fn preview(
+        lines: Vec<Line<'static>>,
+        toc: Vec<TocEntry>,
+        image_blocks: Vec<ImageBlockInfo>,
+    ) -> Self {
         Self {
             lines,
             toc,
@@ -370,6 +387,7 @@ impl ParseResult {
             line_number_map: Vec::new(),
             source_line_map: Vec::new(),
             code_blocks: Vec::new(),
+            image_blocks,
         }
     }
 }
@@ -381,6 +399,7 @@ impl From<ParseResult> for (Vec<Line<'static>>, Vec<TocEntry>, Vec<LinkSpan>, Ve
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn parse_markdown(
     src: &str,
     ss: &syntect::parsing::SyntaxSet,
@@ -389,7 +408,7 @@ pub(crate) fn parse_markdown(
     file_mode: bool,
     code_line_numbers: bool,
 ) -> ParseResult {
-    parse_markdown_with_width(
+    parse_markdown_with_width_and_path(
         src,
         ss,
         theme,
@@ -397,9 +416,32 @@ pub(crate) fn parse_markdown(
         md_theme,
         file_mode,
         code_line_numbers,
+        None,
     )
 }
 
+pub(crate) fn parse_markdown_with_path(
+    src: &str,
+    ss: &syntect::parsing::SyntaxSet,
+    theme: &syntect::highlighting::Theme,
+    md_theme: &MarkdownTheme,
+    file_mode: bool,
+    code_line_numbers: bool,
+    document_path: Option<&Path>,
+) -> ParseResult {
+    parse_markdown_with_width_and_path(
+        src,
+        ss,
+        theme,
+        DEFAULT_RENDER_WIDTH,
+        md_theme,
+        file_mode,
+        code_line_numbers,
+        document_path,
+    )
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn parse_markdown_with_width(
     src: &str,
     ss: &syntect::parsing::SyntaxSet,
@@ -409,6 +451,30 @@ pub(crate) fn parse_markdown_with_width(
     file_mode: bool,
     code_line_numbers: bool,
 ) -> ParseResult {
+    parse_markdown_with_width_and_path(
+        src,
+        ss,
+        theme,
+        render_width,
+        theme_colors,
+        file_mode,
+        code_line_numbers,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn parse_markdown_with_width_and_path(
+    src: &str,
+    ss: &syntect::parsing::SyntaxSet,
+    theme: &syntect::highlighting::Theme,
+    render_width: usize,
+    theme_colors: &MarkdownTheme,
+    file_mode: bool,
+    code_line_numbers: bool,
+    document_path: Option<&Path>,
+) -> ParseResult {
+    let image_base_dir = document_path.and_then(Path::parent);
     let original_src = src;
     let (src, fm_pairs) = frontmatter::extract_frontmatter(src);
     let fm_byte_count = original_src.len() - src.len();
@@ -432,6 +498,9 @@ pub(crate) fn parse_markdown_with_width(
     let mut code_lang = String::new();
     let mut code_buf = String::new();
     let mut code_blocks: Vec<CodeBlockInfo> = Vec::new();
+    let mut image_blocks: Vec<ImageBlockInfo> = Vec::new();
+    let mut next_image_id = 0usize;
+    let mut image: Vec<ImageParseState> = Vec::new();
     let mut blockquote_depth = 0usize;
     let mut inline = InlineStyleState::default();
     let mut html_style_buffer: Option<(HtmlBufferKind, String)> = None;
@@ -467,14 +536,16 @@ pub(crate) fn parse_markdown_with_width(
             prev_event_end = range.end;
             continue;
         }
-        if handle_inline_style_event(
-            &ev,
-            &mut inline,
-            &mut spans,
-            theme_colors,
-            blockquote_depth,
-            &mut link_urls,
-        ) {
+        if image.is_empty()
+            && handle_inline_style_event(
+                &ev,
+                &mut inline,
+                &mut spans,
+                theme_colors,
+                blockquote_depth,
+                &mut link_urls,
+            )
+        {
             prev_event_end = range.end;
             continue;
         }
@@ -503,6 +574,77 @@ pub(crate) fn parse_markdown_with_width(
                     theme_colors,
                 );
                 last_block = LastBlock::Other;
+            }
+            MdEvent::Start(Tag::Image {
+                dest_url, title, ..
+            }) => {
+                image.push(ImageParseState {
+                    id: next_image_id,
+                    source: dest_url.to_string(),
+                    title: title.to_string(),
+                    alt: String::new(),
+                    source_line: state.current_src_line,
+                });
+                next_image_id += 1;
+            }
+            MdEvent::End(TagEnd::Image) => {
+                if let Some(image_state) = image.pop() {
+                    if let Some(parent) = image.last_mut() {
+                        if !parent.alt.is_empty() && !image_state.alt.is_empty() {
+                            parent.alt.push(' ');
+                        }
+                        parent.alt.push_str(&image_state.alt);
+                    } else {
+                        flush_pending_inline_if_any(
+                            &mut lines,
+                            &mut spans,
+                            blockquote_depth,
+                            &list_stack,
+                            &mut item_stack,
+                            render_width,
+                            theme_colors,
+                            blockquote_color,
+                        );
+                        let rendered_start = lines.len();
+                        state.mark_wrapped(before, rendered_start, &lines);
+                        let layout = push_image_placeholder(
+                            &mut lines,
+                            &mut item_stack,
+                            &image_state.alt,
+                            &image_state.source,
+                            ImageRenderContext {
+                                render_width,
+                                blockquote_depth,
+                                list_stack: &list_stack,
+                                blockquote_color,
+                                theme: theme_colors,
+                                image_base_dir,
+                            },
+                        );
+                        let block = ImageBlockInfo {
+                            id: image_state.id,
+                            source: image_state.source,
+                            alt: image_state.alt,
+                            title: image_state.title,
+                            source_line: image_state.source_line,
+                            rendered_start,
+                            rendered_end: lines.len().saturating_sub(1),
+                            rendered_width: layout.rendered_width,
+                            prefix_width: layout.prefix_width,
+                            renderable: !footnotes.is_active(),
+                        };
+                        if footnotes.is_active() {
+                            footnotes.record_image_block(block);
+                        } else {
+                            image_blocks.push(block);
+                        }
+                        state.mark_image_block(
+                            rendered_start,
+                            lines.len(),
+                            image_state.source_line,
+                        );
+                    }
+                }
             }
             MdEvent::Start(Tag::Paragraph) => {}
             MdEvent::End(TagEnd::Paragraph) => {
@@ -618,7 +760,9 @@ pub(crate) fn parse_markdown_with_width(
                 last_block = LastBlock::Other;
             }
             MdEvent::Code(text) => {
-                if let Some((_, buf)) = html_style_buffer.as_mut() {
+                if let Some(image_state) = image.last_mut() {
+                    image_state.alt.push_str(text.as_ref());
+                } else if let Some((_, buf)) = html_style_buffer.as_mut() {
                     buf.push_str(text.as_ref());
                 } else {
                     push_inline_code_span(&mut spans, text.as_ref(), theme_colors);
@@ -737,16 +881,25 @@ pub(crate) fn parse_markdown_with_width(
                 last_block = LastBlock::Other;
             }
             MdEvent::Text(text) => {
-                push_text_event(
-                    &mut spans,
-                    &mut code_buf,
-                    text.as_ref(),
-                    in_code,
-                    theme_colors,
-                    blockquote_depth,
-                    inline,
-                    &mut html_style_buffer,
-                );
+                if let Some(image_state) = image.last_mut() {
+                    image_state.alt.push_str(text.as_ref());
+                } else {
+                    push_text_event(
+                        &mut spans,
+                        &mut code_buf,
+                        text.as_ref(),
+                        in_code,
+                        theme_colors,
+                        blockquote_depth,
+                        inline,
+                        &mut html_style_buffer,
+                    );
+                }
+            }
+            MdEvent::SoftBreak | MdEvent::HardBreak if !image.is_empty() => {
+                if let Some(image_state) = image.last_mut() {
+                    image_state.alt.push(' ');
+                }
             }
             MdEvent::SoftBreak | MdEvent::HardBreak if !in_code => {
                 flush_wrapped_spans(
@@ -762,6 +915,14 @@ pub(crate) fn parse_markdown_with_width(
                 wraps = true;
             }
             MdEvent::SoftBreak | MdEvent::HardBreak => {}
+            MdEvent::InlineHtml(raw) if !image.is_empty() => {
+                if let Some(image_state) = image.last_mut() {
+                    match image_alt_html_text(raw.as_ref()) {
+                        Some(text) => image_state.alt.push_str(text),
+                        None => image_state.alt.push_str(raw.as_ref()),
+                    }
+                }
+            }
             MdEvent::InlineHtml(raw) if !in_code => {
                 match handle_html_tag_event(raw.as_ref(), &mut inline, &mut spans) {
                     HtmlTagOutcome::Consumed => {}
@@ -808,7 +969,16 @@ pub(crate) fn parse_markdown_with_width(
                 }
             }
             MdEvent::InlineMath(text) => {
-                push_inline_latex_span(&mut spans, text.as_ref(), theme_colors);
+                if let Some(image_state) = image.last_mut() {
+                    image_state.alt.push_str(text.as_ref());
+                } else {
+                    push_inline_latex_span(&mut spans, text.as_ref(), theme_colors);
+                }
+            }
+            MdEvent::DisplayMath(text) if !image.is_empty() => {
+                if let Some(image_state) = image.last_mut() {
+                    image_state.alt.push_str(text.as_ref());
+                }
             }
             MdEvent::DisplayMath(text) => {
                 if !spans.is_empty() {
@@ -880,6 +1050,8 @@ pub(crate) fn parse_markdown_with_width(
                     &mut table,
                     &mut last_block,
                     &mut state,
+                    &mut image,
+                    &mut next_image_id,
                     &mut toc,
                     &mut link_urls,
                 );
@@ -916,6 +1088,8 @@ pub(crate) fn parse_markdown_with_width(
                     &mut table,
                     &mut last_block,
                     &mut state,
+                    &mut image,
+                    &mut next_image_id,
                     &mut toc,
                     &mut link_urls,
                 );
@@ -938,6 +1112,7 @@ pub(crate) fn parse_markdown_with_width(
         &mut lines,
         &mut state,
         &mut link_urls,
+        &mut image_blocks,
         theme_colors,
         render_width,
     );
@@ -953,6 +1128,7 @@ pub(crate) fn parse_markdown_with_width(
         line_number_map: state.line_number_map,
         source_line_map: state.source_line_map,
         code_blocks,
+        image_blocks,
     }
 }
 
@@ -1009,6 +1185,15 @@ impl LineMapState {
                 });
             self.push(is_new);
         }
+    }
+
+    fn mark_image_block(&mut self, from: usize, to: usize, source_line: usize) {
+        let previous_source_line = self.current_src_line;
+        self.current_src_line = source_line;
+        for i in self.line_number_map.len()..to {
+            self.push(i == from);
+        }
+        self.current_src_line = previous_source_line;
     }
 
     fn mark_table_lines(&mut self, to: usize, lines: &[Line<'_>]) {
