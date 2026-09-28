@@ -1,71 +1,42 @@
 <p align="center">
-  <img src="images/logo-wordmark.svg" alt="leaf" width="360" />
+  <strong>leaf-more</strong><br>
+  A small fork of
+  <a href="https://github.com/RivoLink/leaf">leaf</a>
+  with a few extra features, starting with Kitty image rendering.
 </p>
 
 <p align="center">
-  Terminal Markdown previewer — GUI-like experience.
-</p>
-
-<p align="center">
-  <img src="images/preview.png" alt="leaf" width="710px" /><br>
+  <img src="images/preview.png" alt="leaf-more" width="710px" /><br>
   <sub>See more screenshots in the <a href="demo/README.md">features</a> demo</sub>
 </p>
 
+## About this fork
+
+`leaf-more` is an independent fork of
+[`RivoLink/leaf`](https://github.com/RivoLink/leaf). It is not affiliated with
+or endorsed by the upstream project.
+
+Upstream remains the canonical `leaf`. Thanks to
+[@RivoLink](https://github.com/RivoLink) and all upstream contributors for the
+original project and its excellent terminal experience. This fork exists for
+optional additions that fall outside upstream's current scope, starting with
+local Kitty image rendering. The upstream author's decision not to include
+image preview is respected here.
+
+The executable is still called `leaf`, so an existing workflow can use this
+fork without changing commands. Use one fork at a time: don't expect an
+upstream binary to render images, and don't expect this fork to follow
+upstream-only changes automatically.
+
 ## Install
 
-Install the latest published binary.
-
-**macOS / Linux / Android / Termux**
+Install from source with Cargo:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/RivoLink/leaf/main/scripts/install.sh | sh
+cargo install --git https://github.com/FelixZhang/leaf-more
 ```
 
-**Windows**
-
-```powershell
-irm https://raw.githubusercontent.com/RivoLink/leaf/main/scripts/install.ps1 | iex
-```
-
-**npm**
-
-Install the package from [npmjs.com](https://www.npmjs.com/package/@rivolink/leaf):
-
-```bash
-npm install -g @rivolink/leaf
-```
-
-**Homebrew**
-
-Install the formula from [brew.sh](https://formulae.brew.sh/formula/leaf-markdown-viewer):
-
-```bash
-brew install leaf-markdown-viewer
-```
-
-**Cargo**
-
-Install the crate from [crates.io](https://crates.io/crates/leaf-markdown-viewer):
-
-```bash
-cargo install leaf-markdown-viewer
-```
-
-**Scoop (Windows)**
-
-Install the app from [scoop.sh](https://scoop.sh/#/apps?q=leaf-markdown-viewer):
-
-```bash
-scoop install leaf-markdown-viewer
-```
-
-**ArchLinux (AUR)**
-
-Install the package from [archlinux.org](https://aur.archlinux.org/packages/leaf-markdown-viewer-bin), use an [AUR helper](https://wiki.archlinux.org/title/AUR_helpers) such as `yay`:
-
-```bash
-yay -S leaf-markdown-viewer
-```
+This installs the `leaf` executable from `leaf-more`.
 
 **Verify the installation**
 
@@ -73,43 +44,22 @@ yay -S leaf-markdown-viewer
 leaf --version
 ```
 
+> To install upstream `leaf`, use the installation instructions in the
+> [upstream repository](https://github.com/RivoLink/leaf). The npm, Homebrew,
+> Scoop, and AUR packages documented there are upstream packages, not
+> `leaf-more`.
+
 ## Update
 
-Update an existing installation to the latest published release.
-
-**Self**
+After a new `leaf-more` commit or release:
 
 ```bash
-leaf --update
+cargo install --git https://github.com/FelixZhang/leaf-more --force
 ```
 
-`leaf --update` downloads the matching published asset, verifies it against the published `checksums.txt` SHA256, and then installs it.
-
-On Windows, if replacing the running `.exe` is blocked by the OS, rerun the PowerShell installer from the install section.
-
-**npm**
-
-```bash
-npm update -g @rivolink/leaf
-```
-
-**Homebrew**
-
-```bash
-brew upgrade leaf-markdown-viewer
-```
-
-**Cargo**
-
-```bash
-cargo install leaf-markdown-viewer --force
-```
-
-**Scoop (Windows)**
-
-```bash
-scoop update leaf-markdown-viewer
-```
+If a published `leaf-more` release is available, `leaf --update` can download
+the matching asset and verify its SHA256 checksum. Until then, use the Cargo
+command above.
 
 ## Usage
 
@@ -421,10 +371,10 @@ For `leaf-windows-x86_64.exe`, the relevant package is the latest supported **X6
 
 If `leaf --update` fails on Windows with an error about replacing, renaming, or writing `leaf.exe`, the running executable was likely locked by the OS.
 
-Close any terminal session still running `leaf`, then rerun the PowerShell installer from the install section:
+Close any terminal session still running `leaf`, then reinstall from source:
 
-```powershell
-irm https://raw.githubusercontent.com/RivoLink/leaf/main/scripts/install.ps1 | iex
+```bash
+cargo install --git https://github.com/FelixZhang/leaf-more --force
 ```
 
 ### Windows: auto-complete execution policy error
@@ -437,77 +387,28 @@ Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 ## Uninstall
 
-The uninstall script removes the **leaf** configuration, shell auto-completion, and binary. It is interactive, so download first and run locally.
-
-**macOS / Linux / Android / Termux**
-
-```bash
-# Download
-curl -fsSL https://raw.githubusercontent.com/RivoLink/leaf/main/scripts/uninstall.sh -o uninstall.sh
-
-# Run
-sh uninstall.sh
-```
-
-**Windows**
-
-```powershell
-# Download
-irm https://raw.githubusercontent.com/RivoLink/leaf/main/scripts/uninstall.ps1 -OutFile uninstall.ps1
-
-# Run
-powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
-```
-
-**npm**
+Remove the `leaf` configuration, shell auto-completion, and Cargo-installed
+binary:
 
 ```bash
 leaf --config remove
 leaf --auto-complete remove
-
-npm uninstall -g @rivolink/leaf
+cargo uninstall leaf-more
 ```
 
-**Homebrew**
-
-```bash
-leaf --config remove
-leaf --auto-complete remove
-
-brew uninstall leaf-markdown-viewer
-```
-
-**Cargo**
-
-```bash
-leaf --config remove
-leaf --auto-complete remove
-
-cargo uninstall leaf-markdown-viewer
-```
-
-**Scoop (Windows)**
-
-```bash
-leaf --config remove
-leaf --auto-complete remove
-
-scoop uninstall leaf-markdown-viewer
-```
+If you installed upstream `leaf` from another package manager, use that
+package manager's uninstall command instead.
 
 ## Contributors
 
-Thanks to all contributors.
-
-![Contributors](https://contrib.rocks/image?repo=RivoLink/leaf&t=717807600)
+`leaf-more` builds on the work of [@RivoLink](https://github.com/RivoLink) and
+all [upstream contributors](https://github.com/RivoLink/leaf/graphs/contributors).
 
 ## Support
 
-Contributions are welcome. Feel free to open an issue or submit a pull request.
-
-See the [CONTRIBUTING.md](CONTRIBUTING.md) file for details.
-
-If you like **leaf**, consider giving the project a star ⭐
+Fork-specific issues and contributions are welcome in this repository. For
+behavior that also exists in upstream `leaf`, consider reporting it upstream
+first so the canonical project benefits.
 
 ## License
 

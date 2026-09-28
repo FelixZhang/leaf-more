@@ -9,7 +9,7 @@ use std::{
     time::Duration,
 };
 
-const REPOS: &[&str] = &["RivoLink/leaf", "leaf-mg/leaf"];
+const REPOS: &[&str] = &["FelixZhang/leaf-more"];
 const CHECKSUMS_ASSET_NAME: &str = "checksums.txt";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(20);
 
@@ -32,7 +32,7 @@ struct GithubAsset {
 }
 
 pub(crate) fn run_update() -> Result<()> {
-    println!("Updating leaf...");
+    println!("Updating leaf-more...");
 
     let current_version = env!("CARGO_PKG_VERSION");
     let asset_name = current_asset_name()?;
@@ -60,7 +60,7 @@ pub(crate) fn run_update() -> Result<()> {
 
     match replace_binary(&current_exe, &temp_path) {
         Ok(()) => {
-            println!("leaf updated from {current_version} to {latest_version}");
+            println!("leaf-more updated from {current_version} to {latest_version}");
             Ok(())
         }
         Err(err) => {
