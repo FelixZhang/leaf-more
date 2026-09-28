@@ -125,6 +125,7 @@ pub(super) fn handle_table_event(
     lines: &mut Vec<Line<'static>>,
     render_width: usize,
     link_urls: &mut Vec<String>,
+    render_images: bool,
 ) -> bool {
     let Some(tb) = table.as_mut() else {
         return false;
@@ -156,7 +157,7 @@ pub(super) fn handle_table_event(
         }
         MdEvent::Start(Tag::Image {
             dest_url, title, ..
-        }) => {
+        }) if render_images => {
             tb.image.push(TableImageState {
                 alt: String::new(),
                 source: dest_url.to_string(),
@@ -164,7 +165,7 @@ pub(super) fn handle_table_event(
             });
             true
         }
-        MdEvent::End(TagEnd::Image) => {
+        MdEvent::End(TagEnd::Image) if render_images => {
             if let Some(image) = tb.image.pop() {
                 if let Some(parent) = tb.image.last_mut() {
                     if !parent.alt.is_empty() && !image.alt.is_empty() {

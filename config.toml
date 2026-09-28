@@ -59,6 +59,12 @@ theme = "ocean"
 # Default: false
 watch = false
 
+# Render local Markdown images in the interactive Kitty TUI
+# Press i or I in the TUI to toggle images for the current session.
+# Priority: LEAF_KITTY_IMAGES > this setting > default (false)
+# Accepted env values: 1 = true, 0 = false
+kitty-images = false
+
 # Extra file types shown in the file picker
 # Add other extensions to also show them (without the dot).
 # Code files (py, sh, css, html...) get syntax highlighting.

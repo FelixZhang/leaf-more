@@ -75,9 +75,9 @@ pub(super) fn popup_footer_line(segments: &[&'static str], bg: Color) -> Line<'s
     Line::from(spans)
 }
 
-pub(super) fn render_help_popup(f: &mut Frame, _app: &App) {
+pub(super) fn render_help_popup(f: &mut Frame, app: &App) {
     let theme = app_theme();
-    let area = centered_rect(53, 26, f.area());
+    let area = centered_rect(53, 27, f.area());
 
     let select_hint =
         crate::editor::selection_modifier_label(&crate::editor::detect_terminal_emulator());
@@ -88,6 +88,11 @@ pub(super) fn render_help_popup(f: &mut Frame, _app: &App) {
         .fg(theme.ui.toc_accent)
         .add_modifier(Modifier::BOLD);
     let text_style = Style::default().fg(theme.ui.toc_primary_inactive);
+    let image_state = if app.is_kitty_images_rendering() {
+        "images: on"
+    } else {
+        "images: off"
+    };
 
     let title_style = Style::default()
         .fg(theme.markdown.heading_2)
@@ -190,6 +195,10 @@ pub(super) fn render_help_popup(f: &mut Frame, _app: &App) {
             Span::raw("     "),
             Span::styled("ctrl+h      ", key_style),
             Span::styled("hist", text_style),
+        ]),
+        Line::from(vec![
+            Span::styled("i/I        ", key_style),
+            Span::styled(image_state, text_style),
         ]),
         Line::from(vec![
             Span::styled("p          ", key_style),

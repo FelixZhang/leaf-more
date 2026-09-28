@@ -132,6 +132,7 @@ text = [220, 221, 222]
 fn repository_config_keeps_ocean_default() {
     let config: LeafConfig = toml::from_str(include_str!("../../config.toml")).unwrap();
     assert_eq!(config.theme.as_deref(), Some("ocean"));
+    assert_eq!(config.kitty_images, Some(false));
     assert!(config.themes.is_empty());
 }
 
@@ -342,4 +343,37 @@ fn validate_hyper_link_prefix_graphemes() {
     assert!(!is_valid_hyper_link_prefix("ab"));
     assert!(!is_valid_hyper_link_prefix(" "));
     assert!(!is_valid_hyper_link_prefix("→→"));
+}
+
+#[test]
+fn parse_kitty_images_config() {
+    let enabled: LeafConfig = toml::from_str("kitty-images = true").unwrap();
+    let disabled: LeafConfig = toml::from_str("kitty-images = false").unwrap();
+    let missing: LeafConfig = toml::from_str("theme = \"ocean\"").unwrap();
+    assert_eq!(enabled.kitty_images, Some(true));
+    assert_eq!(disabled.kitty_images, Some(false));
+    assert_eq!(missing.kitty_images, None);
+}
+
+#[test]
+fn resolve_kitty_images_defaults_to_false() {
+    let _guard = super::lock_theme_test_state();
+    std::env::remove_var("LEAF_KITTY_IMAGES");
+    assert!(!test_resolve_kitty_images(None));
+}
+
+#[test]
+fn resolve_kitty_images_uses_config_then_environment() {
+    let _guard = super::lock_theme_test_state();
+    std::env::remove_var("LEAF_KITTY_IMAGES");
+    assert!(test_resolve_kitty_images(Some(true)));
+    assert!(!test_resolve_kitty_images(Some(false)));
+
+    std::env::set_var("LEAF_KITTY_IMAGES", "1");
+    assert!(test_resolve_kitty_images(Some(false)));
+    std::env::set_var("LEAF_KITTY_IMAGES", "0");
+    assert!(!test_resolve_kitty_images(Some(true)));
+    std::env::set_var("LEAF_KITTY_IMAGES", "invalid");
+    assert!(test_resolve_kitty_images(Some(true)));
+    std::env::remove_var("LEAF_KITTY_IMAGES");
 }

@@ -7,6 +7,11 @@ use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use super::mouse::handle_open_in_editor;
 
+pub(crate) fn is_kitty_images_key(key: &KeyEvent) -> bool {
+    matches!(key.code, KeyCode::Char('i') | KeyCode::Char('I'))
+        && !key.modifiers.contains(KeyModifiers::CONTROL)
+}
+
 pub(super) enum HandleResult {
     Continue { redraw: bool },
     Break,
@@ -418,6 +423,9 @@ pub(super) fn handle_key_event(
                 app.begin_goto_line()
             }
             KeyCode::Char('l') | KeyCode::Char('L') => app.toggle_line_numbers(),
+            _ if is_kitty_images_key(&key) => {
+                app.toggle_kitty_images(ss, themes);
+            }
             KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 handle_open_in_editor(terminal, app, ss, themes)?;
             }

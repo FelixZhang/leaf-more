@@ -35,7 +35,7 @@
   - `syntax.rs`  :  syntect code highlighting and language resolution
   - `fences.rs`  :  code fence normalization (nested fences, tilde fences)
   - `links.rs`  :  link span detection and construction
-  - `images.rs`  :  Markdown image block metadata, aspect-aware height calculation, and text placeholder layout
+  - `images.rs`  :  Markdown image block metadata, image aspect ratio height calculation, and text placeholder layout
   - `tables.rs`  :  table construction, event handling, and rendering
   - `table_layout.rs`  :  table cell sizing, wrapping, and alignment algorithms
   - `latex.rs`  :  LaTeX-to-Unicode conversion: `unicodeit` + postprocessing for `\frac`, `\sqrt`, `^{}`, `_{}`
@@ -91,8 +91,8 @@
 - `src/image_runtime.rs`
   - Kitty-only capability detection and terminal protocol setup
   - local image path resolution, safety limits, and decode cache keys
-  - background image decode/resize/encode worker and result polling
-  - scroll-aware Kitty `SlicedImage` placement inside the TUI content area
+  - background image decode/resize/encode worker, cancellation, and result polling
+  - scroll-aware Kitty `SlicedImage` placement and `i/I` runtime enable/disable lifecycle
 
 - `src/terminal.rs`
   - raw mode / alternate screen lifecycle
@@ -130,10 +130,10 @@
    - a file argument, or
    - `stdin`, or
    - the file picker if no input is provided interactively.
-3. `markdown/` parses the source into rendered lines, TOC, link spans, code blocks, and image block metadata. Local image headers are probed for dimensions so each image reserves an aspect-aware text placeholder area before full decoding begins.
+3. `markdown/` parses the source into rendered lines, TOC, link spans, code blocks, and image block metadata. Image layout is a parse-time decision: when image rendering is off, image events take the upstream text path and no image blocks or reserved rows are created. When enabled, local image headers are probed for dimensions so each image reserves a placeholder area sized from its aspect ratio before full decoding begins.
 4. If `--inline` is active, `inline.rs` writes the text representation to stdout and exits; Kitty image sequences are intentionally excluded from this path.
 5. `App` stores the state, image blocks, and the Kitty image runtime.
-6. After terminal initialization, `image_runtime.rs` detects Kitty only when the document contains renderable local images. The runtime queues visible images to its background worker and polls completed protocol states from the main event loop.
+6. After terminal initialization, `image_runtime.rs` detects Kitty only when `kitty-images` is enabled (config default: false) and the document contains renderable local images. The runtime queues visible images to its background worker and polls completed protocol states from the main event loop. `i/I` reparses the document for the new layout, then queues a deferred enable request for the next loop iteration; disabling cancels the current worker generation and the reparse removes image blocks and reserved rows.
 7. `runtime.rs` runs the event loop:
    - processes the pending picker queue and spawns the loading thread
    - polls picker loading and image worker results, installing them when ready
@@ -161,6 +161,7 @@
   - caches are refreshed and image base paths are updated
 
 - image load:
+  - `kitty-images` defaults to false; the `i/I` hotkey changes only the current session
   - visible local images are fingerprinted by path, file metadata, and target cell size
   - changed or newly visible images are decoded and Kitty-encoded in the background
   - failed, remote, SVG, oversized, and non-Kitty images retain the text placeholder

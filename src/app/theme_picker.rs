@@ -135,6 +135,7 @@ impl App {
             self.file_mode,
             self.code_line_numbers,
             self.filepath.as_deref(),
+            self.kitty_images_enabled,
         );
         self.store_theme_preview(preset, &parsed.lines, &parsed.toc, &parsed.image_blocks);
         self.replace_content(parsed);
@@ -161,6 +162,7 @@ impl App {
                     self.file_mode,
                     self.code_line_numbers,
                     self.filepath.as_deref(),
+                    self.kitty_images_enabled,
                 );
                 self.replace_content(parsed);
             }

@@ -13,7 +13,7 @@ impl App {
         self.image_runtime.sync_blocks(&image_blocks);
         self.image_blocks = image_blocks;
         self.store_current_theme_preview();
-        self.try_enable_kitty_images();
+        self.reconcile_kitty_images_after_content_change();
     }
 
     pub(crate) fn is_code_select_mode(&self) -> bool {

@@ -2,7 +2,11 @@ use std::{
     collections::{HashMap, HashSet},
     env, fs,
     path::{Path, PathBuf},
-    sync::mpsc::{self, Receiver, Sender},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, Receiver, Sender},
+        Arc, Mutex,
+    },
     thread,
     time::{Duration, Instant, SystemTime},
 };
@@ -15,13 +19,20 @@ use ratatui_image::{
     sliced::{SignedPosition, SlicedImage, SlicedProtocol},
     Resize,
 };
+use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
-use crate::{app::App, markdown::ImageBlockInfo};
+#[cfg(test)]
+use crate::app::AppConfig;
+use crate::{
+    app::{App, ImageFlash},
+    markdown::ImageBlockInfo,
+};
 
 const MAX_IMAGE_FILE_BYTES: u64 = 20 * 1024 * 1024;
 const MAX_IMAGE_DIMENSION: u32 = 16_384;
 const MAX_IMAGE_ALLOC_BYTES: u64 = 128 * 1024 * 1024;
 const IMAGE_WORKER_POLL: Duration = Duration::from_millis(50);
+static IMAGE_DECODE_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct ImageSize {
@@ -44,6 +55,7 @@ struct ImageJob {
     picker: Picker,
     path: PathBuf,
     attempts: u8,
+    cancel: Arc<AtomicBool>,
 }
 
 struct ImageResult {
@@ -71,6 +83,8 @@ pub(crate) struct ImageRuntime {
     entries: HashMap<usize, ImageEntry>,
     document_dir: PathBuf,
     terminal_ready: bool,
+    active: bool,
+    cancel_worker: Option<Arc<AtomicBool>>,
 }
 
 impl ImageRuntime {
@@ -82,6 +96,8 @@ impl ImageRuntime {
             entries: HashMap::new(),
             document_dir: document_dir(document_path),
             terminal_ready: false,
+            active: false,
+            cancel_worker: None,
         }
     }
 
@@ -93,22 +109,36 @@ impl ImageRuntime {
         }
     }
 
-    pub(crate) fn enable_kitty(&mut self) {
-        if self.picker.is_some() {
-            return;
+    pub(crate) fn enable_kitty(&mut self) -> bool {
+        if self.active {
+            return true;
         }
-        let mut picker = match Picker::from_query_stdio() {
-            Ok(picker) => picker,
-            Err(_) => return,
-        };
-        picker.set_protocol_type(ProtocolType::Kitty);
+        if self.picker.is_none() {
+            let mut picker = match Picker::from_query_stdio() {
+                Ok(picker) => picker,
+                Err(_) => return false,
+            };
+            picker.set_protocol_type(ProtocolType::Kitty);
+            self.picker = Some(picker);
+        }
+        if self.picker.is_none() {
+            return false;
+        }
         let (job_sender, job_receiver) = mpsc::channel();
         let (result_sender, result_receiver) = mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let worker_cancel = Arc::clone(&cancel);
         let worker = thread::Builder::new()
             .name("leaf-kitty-images".to_string())
             .spawn(move || {
                 while let Ok(job) = job_receiver.recv() {
-                    let result = decode_and_prepare(&job).map_err(|err| err.to_string());
+                    if worker_cancel.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    let result = decode_job_guarded(&job).map_err(|err| err.to_string());
+                    if worker_cancel.load(Ordering::Relaxed) {
+                        break;
+                    }
                     if result_sender
                         .send(ImageResult {
                             block_id: job.block_id,
@@ -123,11 +153,27 @@ impl ImageRuntime {
                 }
             });
         if worker.is_err() {
-            return;
+            return false;
         }
-        self.picker = Some(picker);
+        self.active = true;
+        self.cancel_worker = Some(cancel);
         self.job_sender = Some(job_sender);
         self.result_receiver = Some(result_receiver);
+        true
+    }
+
+    pub(crate) fn disable(&mut self) {
+        self.active = false;
+        if let Some(cancel) = self.cancel_worker.take() {
+            cancel.store(true, Ordering::Relaxed);
+        }
+        self.job_sender = None;
+        self.result_receiver = None;
+        self.entries.clear();
+    }
+
+    pub(crate) fn is_active(&self) -> bool {
+        self.active
     }
 
     pub(crate) fn sync_blocks(&mut self, blocks: &[ImageBlockInfo]) {
@@ -136,6 +182,9 @@ impl ImageRuntime {
     }
 
     pub(crate) fn poll_results(&mut self) -> bool {
+        if !self.active {
+            return false;
+        }
         let Some(receiver) = &self.result_receiver else {
             return false;
         };
@@ -167,6 +216,9 @@ impl ImageRuntime {
     }
 
     pub(crate) fn poll_delay(&self) -> Option<Duration> {
+        if !self.active {
+            return None;
+        }
         let now = Instant::now();
         self.entries
             .values()
@@ -188,7 +240,11 @@ impl ImageRuntime {
         scroll: usize,
         x_offset: usize,
     ) {
-        if self.picker.is_none() || content_area.width == 0 || content_area.height == 0 {
+        if !self.active
+            || self.picker.is_none()
+            || content_area.width == 0
+            || content_area.height == 0
+        {
             return;
         }
         let visible_end = scroll.saturating_add(content_area.height as usize);
@@ -273,6 +329,9 @@ impl ImageRuntime {
         path: PathBuf,
         size: ratatui::layout::Size,
     ) {
+        if !self.active {
+            return;
+        }
         let mut attempts = 0;
         if let Some(entry) = self.entries.get(&block_id) {
             if entry.key == key {
@@ -296,6 +355,9 @@ impl ImageRuntime {
         let Some(sender) = &self.job_sender else {
             return;
         };
+        let Some(cancel) = self.cancel_worker.as_ref().map(Arc::clone) else {
+            return;
+        };
         self.entries.insert(
             block_id,
             ImageEntry {
@@ -310,25 +372,115 @@ impl ImageRuntime {
             picker,
             path,
             attempts,
+            cancel,
         });
     }
 }
 
 impl App {
+    pub(crate) fn set_kitty_images_enabled(&mut self, enabled: bool) {
+        self.kitty_images_enabled = enabled;
+        self.kitty_images_enable_requested = false;
+        if !enabled {
+            self.image_runtime.disable();
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_kitty_images_enabled(&self) -> bool {
+        self.kitty_images_enabled
+    }
+
+    pub(crate) fn is_kitty_images_rendering(&self) -> bool {
+        self.kitty_images_enabled && self.image_runtime.is_active()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_kitty_images_rendering_for_test(&mut self) {
+        self.image_runtime.terminal_ready = true;
+        self.image_runtime.picker = Some(ratatui_image::picker::Picker::halfblocks());
+        self.image_runtime.active = true;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn kitty_images_enable_requested(&self) -> bool {
+        self.kitty_images_enable_requested
+    }
+
+    pub(crate) fn toggle_kitty_images(&mut self, ss: &SyntaxSet, themes: &ThemeSet) {
+        if self.kitty_images_enabled {
+            self.kitty_images_enabled = false;
+            self.kitty_images_enable_requested = false;
+            self.image_runtime.disable();
+            self.set_image_flash(ImageFlash::Disabled);
+            self.reparse_source(ss, themes);
+            return;
+        }
+        if !is_kitty_terminal() {
+            self.set_image_flash(ImageFlash::Unavailable);
+            return;
+        }
+        self.kitty_images_enabled = true;
+        self.kitty_images_enable_requested = true;
+        self.reparse_source(ss, themes);
+        if !self.image_blocks.iter().any(|block| block.renderable) {
+            self.kitty_images_enabled = false;
+            self.kitty_images_enable_requested = false;
+            self.image_runtime.disable();
+            self.reparse_source(ss, themes);
+            self.set_image_flash(ImageFlash::NoImages);
+        }
+    }
+
+    pub(crate) fn reconcile_kitty_images_after_content_change(&mut self) -> bool {
+        if self.kitty_images_enable_requested
+            || !self.kitty_images_enabled
+            || !self.image_runtime.terminal_ready
+            || self.image_runtime.is_active()
+            || !self.image_blocks.iter().any(|block| block.renderable)
+        {
+            return false;
+        }
+        self.kitty_images_enable_requested = true;
+        true
+    }
+
+    pub(crate) fn process_pending_kitty_images(&mut self) -> bool {
+        if !std::mem::take(&mut self.kitty_images_enable_requested) {
+            return false;
+        }
+        if self.try_enable_kitty_images() {
+            self.set_image_flash(ImageFlash::Enabled);
+        } else {
+            self.kitty_images_enabled = false;
+            self.image_runtime.disable();
+            self.set_image_flash(ImageFlash::Unavailable);
+        }
+        true
+    }
+
     pub(crate) fn initialize_kitty_images(&mut self) -> bool {
         self.image_runtime.terminal_ready = true;
-        self.try_enable_kitty_images()
+        if !self.kitty_images_enabled || !self.image_blocks.iter().any(|block| block.renderable) {
+            return self.image_runtime.is_active();
+        }
+        if self.image_runtime.enable_kitty() {
+            return true;
+        }
+        self.kitty_images_enabled = false;
+        self.image_runtime.disable();
+        false
     }
 
     pub(crate) fn try_enable_kitty_images(&mut self) -> bool {
-        if !self.image_runtime.terminal_ready
-            || self.image_blocks.is_empty()
+        if !self.kitty_images_enabled
+            || !self.image_runtime.terminal_ready
+            || !self.image_blocks.iter().any(|block| block.renderable)
             || !is_kitty_terminal()
         {
-            return self.image_runtime.picker.is_some();
+            return self.image_runtime.is_active();
         }
-        self.image_runtime.enable_kitty();
-        self.image_runtime.picker.is_some()
+        self.image_runtime.enable_kitty()
     }
 
     pub(crate) fn poll_image_results(&mut self) -> bool {
@@ -358,6 +510,12 @@ fn retry_delay(attempts: u8) -> Duration {
 }
 
 fn decode_and_prepare(job: &ImageJob) -> AnyResult<SlicedProtocol> {
+    let _decode_guard = IMAGE_DECODE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if job.cancel.load(Ordering::Relaxed) {
+        anyhow::bail!("image decode cancelled");
+    }
     if job.key.len > MAX_IMAGE_FILE_BYTES {
         anyhow::bail!("image file exceeds {} bytes", MAX_IMAGE_FILE_BYTES);
     }
@@ -374,6 +532,11 @@ fn decode_and_prepare(job: &ImageJob) -> AnyResult<SlicedProtocol> {
         job.size,
         Resize::Fit(None),
     )?)
+}
+
+fn decode_job_guarded(job: &ImageJob) -> AnyResult<SlicedProtocol> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| decode_and_prepare(job)))
+        .unwrap_or_else(|_| Err(anyhow::anyhow!("image decoder panicked")))
 }
 
 fn document_dir(document_path: Option<&Path>) -> PathBuf {
@@ -415,7 +578,56 @@ fn is_kitty_environment(mut lookup: impl FnMut(&str) -> Option<String>) -> bool 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
+    use std::{collections::HashMap, sync::Mutex};
+
+    static IMAGE_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvGuard(Vec<(&'static str, Option<std::ffi::OsString>)>);
+
+    impl EnvGuard {
+        fn save(names: &[&'static str]) -> Self {
+            Self(
+                names
+                    .iter()
+                    .map(|name| (*name, std::env::var_os(name)))
+                    .collect(),
+            )
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (name, value) in &self.0 {
+                if let Some(value) = value {
+                    std::env::set_var(name, value);
+                } else {
+                    std::env::remove_var(name);
+                }
+            }
+        }
+    }
+
+    fn test_parse_assets() -> (SyntaxSet, ThemeSet) {
+        (
+            SyntaxSet::load_defaults_newlines(),
+            ThemeSet::load_defaults(),
+        )
+    }
+
+    fn test_image_block(id: usize) -> ImageBlockInfo {
+        ImageBlockInfo {
+            id,
+            source: "fixture.png".to_string(),
+            alt: "fixture".to_string(),
+            title: String::new(),
+            source_line: 1,
+            rendered_start: 0,
+            rendered_end: 11,
+            rendered_width: 22,
+            prefix_width: 0,
+            renderable: true,
+        }
+    }
 
     #[test]
     fn kitty_environment_detection_accepts_supported_markers() {
@@ -445,6 +657,243 @@ mod tests {
     }
 
     #[test]
+    fn disable_stops_runtime_and_cancels_worker() {
+        let mut runtime = ImageRuntime::new(None);
+        let (job_sender, _job_receiver) = mpsc::channel();
+        let (_result_sender, result_receiver) = mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(false));
+        runtime.picker = Some(Picker::halfblocks());
+        runtime.job_sender = Some(job_sender);
+        runtime.result_receiver = Some(result_receiver);
+        runtime.cancel_worker = Some(Arc::clone(&cancel));
+        runtime.entries.insert(
+            1,
+            ImageEntry {
+                key: ImageKey {
+                    path: PathBuf::from("fixture.png"),
+                    modified: None,
+                    len: 1,
+                    size: ImageSize {
+                        width: 1,
+                        height: 1,
+                    },
+                },
+                state: ImageState::Loading,
+            },
+        );
+        runtime.active = true;
+
+        runtime.disable();
+
+        assert!(!runtime.is_active());
+        assert!(runtime.job_sender.is_none());
+        assert!(runtime.result_receiver.is_none());
+        assert!(runtime.entries.is_empty());
+        assert!(runtime.picker.is_some());
+        assert!(cancel.load(Ordering::Relaxed));
+        assert!(!runtime.poll_results());
+        assert!(runtime.poll_delay().is_none());
+    }
+
+    #[test]
+    fn app_starts_with_images_disabled_and_reports_no_images() {
+        let _guard = IMAGE_ENV_LOCK.lock().unwrap();
+        let _env = EnvGuard::save(&["KITTY_PID", "KITTY_WINDOW_ID", "TERM"]);
+        std::env::remove_var("KITTY_WINDOW_ID");
+        std::env::set_var("KITTY_PID", "1");
+        std::env::set_var("TERM", "xterm-256color");
+        let (ss, themes) = test_parse_assets();
+        let mut app = App::new(
+            Vec::new(),
+            Vec::new(),
+            "stdin".to_string(),
+            false,
+            false,
+            None,
+            None,
+        );
+        assert!(!app.is_kitty_images_enabled());
+        app.toggle_kitty_images(&ss, &themes);
+        assert!(!app.is_kitty_images_enabled());
+        assert!(app.image_blocks.is_empty());
+        assert!(matches!(
+            app.image_flash().map(|(flash, _)| flash),
+            Some(ImageFlash::NoImages)
+        ));
+    }
+
+    #[test]
+    fn toggle_without_kitty_reports_unavailable_without_enabling() {
+        let _guard = IMAGE_ENV_LOCK.lock().unwrap();
+        let _env = EnvGuard::save(&["KITTY_PID", "KITTY_WINDOW_ID", "TERM"]);
+        std::env::remove_var("KITTY_PID");
+        std::env::remove_var("KITTY_WINDOW_ID");
+        std::env::set_var("TERM", "xterm-256color");
+        let (ss, themes) = test_parse_assets();
+        let source = "![fixture](fixture.png)".to_string();
+        let mut app = App::new_with_source(
+            Vec::new(),
+            Vec::new(),
+            AppConfig {
+                filename: "stdin".to_string(),
+                source: source.clone(),
+                debug_input: false,
+                watch: false,
+                filepath: None,
+                last_file_state: None,
+            },
+        );
+        app.set_image_blocks(vec![test_image_block(1)]);
+
+        app.toggle_kitty_images(&ss, &themes);
+
+        assert!(!app.is_kitty_images_enabled());
+        assert!(!app.kitty_images_enable_requested());
+        assert!(!app.image_runtime.is_active());
+        assert!(matches!(
+            app.image_flash().map(|(flash, _)| flash),
+            Some(ImageFlash::Unavailable)
+        ));
+    }
+
+    #[test]
+    fn configured_enabled_state_survives_initial_empty_picker_document() {
+        let mut app = App::new(
+            Vec::new(),
+            Vec::new(),
+            "stdin".to_string(),
+            false,
+            false,
+            None,
+            None,
+        );
+        app.set_kitty_images_enabled(true);
+        assert!(!app.initialize_kitty_images());
+        assert!(app.is_kitty_images_enabled());
+        assert!(!app.image_runtime.is_active());
+    }
+
+    #[test]
+    fn configured_enable_failure_after_picker_load_returns_to_off() {
+        let _guard = IMAGE_ENV_LOCK.lock().unwrap();
+        let _env = EnvGuard::save(&["KITTY_PID", "KITTY_WINDOW_ID", "TERM"]);
+        std::env::remove_var("KITTY_PID");
+        std::env::remove_var("KITTY_WINDOW_ID");
+        std::env::set_var("TERM", "xterm-256color");
+
+        let mut app = App::new(
+            Vec::new(),
+            Vec::new(),
+            "stdin".to_string(),
+            false,
+            false,
+            None,
+            None,
+        );
+        app.set_kitty_images_enabled(true);
+        assert!(!app.initialize_kitty_images());
+        assert!(app.is_kitty_images_enabled());
+        app.set_image_blocks(vec![test_image_block(1)]);
+        assert!(app.kitty_images_enable_requested());
+        assert!(!app.image_runtime.is_active());
+        app.process_pending_kitty_images();
+
+        assert!(!app.is_kitty_images_enabled());
+        assert!(matches!(
+            app.image_flash().map(|(flash, _)| flash),
+            Some(ImageFlash::Unavailable)
+        ));
+    }
+
+    #[test]
+    fn app_toggle_disables_active_images_immediately() {
+        let (ss, themes) = test_parse_assets();
+        let mut app = App::new(
+            Vec::new(),
+            Vec::new(),
+            "stdin".to_string(),
+            false,
+            false,
+            None,
+            None,
+        );
+        app.set_image_blocks(vec![test_image_block(1)]);
+        app.set_kitty_images_enabled(true);
+        app.image_runtime.active = true;
+        app.toggle_kitty_images(&ss, &themes);
+        assert!(!app.is_kitty_images_enabled());
+        assert!(!app.image_runtime.is_active());
+        assert!(app.image_blocks.is_empty());
+        assert!(matches!(
+            app.image_flash().map(|(flash, _)| flash),
+            Some(ImageFlash::Disabled)
+        ));
+    }
+
+    #[test]
+    fn app_toggle_defers_kitty_query_until_runtime_processing() {
+        let _guard = IMAGE_ENV_LOCK.lock().unwrap();
+        let _env = EnvGuard::save(&["KITTY_PID", "KITTY_WINDOW_ID", "TERM"]);
+        std::env::remove_var("KITTY_WINDOW_ID");
+        std::env::set_var("KITTY_PID", "1");
+        std::env::set_var("TERM", "xterm-256color");
+        let (ss, themes) = test_parse_assets();
+        let source = "![fixture](fixture.png)".to_string();
+        let mut app = App::new_with_source(
+            Vec::new(),
+            Vec::new(),
+            AppConfig {
+                filename: "stdin".to_string(),
+                source: source.clone(),
+                debug_input: false,
+                watch: false,
+                filepath: None,
+                last_file_state: None,
+            },
+        );
+        app.set_image_blocks(vec![test_image_block(1)]);
+        app.toggle_kitty_images(&ss, &themes);
+        assert!(app.is_kitty_images_enabled());
+        assert!(app.kitty_images_enable_requested());
+        assert!(!app.image_runtime.is_active());
+        assert!(app.image_blocks.iter().any(|block| block.renderable));
+    }
+
+    #[test]
+    fn deferred_request_enables_cached_picker_without_stdio_query() {
+        let _guard = IMAGE_ENV_LOCK.lock().unwrap();
+        let _env = EnvGuard::save(&["KITTY_PID", "KITTY_WINDOW_ID", "TERM"]);
+        std::env::set_var("KITTY_PID", "1");
+        let (ss, themes) = test_parse_assets();
+        let source = "![fixture](fixture.png)".to_string();
+        let mut app = App::new_with_source(
+            Vec::new(),
+            Vec::new(),
+            AppConfig {
+                filename: "stdin".to_string(),
+                source: source.clone(),
+                debug_input: false,
+                watch: false,
+                filepath: None,
+                last_file_state: None,
+            },
+        );
+        app.set_image_blocks(vec![test_image_block(1)]);
+        app.toggle_kitty_images(&ss, &themes);
+        app.image_runtime.terminal_ready = true;
+        app.image_runtime.picker = Some(Picker::halfblocks());
+
+        assert!(app.process_pending_kitty_images());
+        assert!(app.is_kitty_images_rendering());
+        assert!(matches!(
+            app.image_flash().map(|(flash, _)| flash),
+            Some(ImageFlash::Enabled)
+        ));
+
+        app.image_runtime.disable();
+    }
+
+    #[test]
     fn failed_image_is_retried_after_backoff() {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let mut runtime = ImageRuntime::new(Some(&manifest_dir.join("README.md")));
@@ -463,7 +912,9 @@ mod tests {
         let (key, path, size) = runtime.resolve_key(&block).expect("fixture image");
         let (sender, receiver) = mpsc::channel();
         runtime.picker = Some(Picker::halfblocks());
+        runtime.active = true;
         runtime.job_sender = Some(sender);
+        runtime.cancel_worker = Some(Arc::new(AtomicBool::new(false)));
         runtime.entries.insert(
             block.id,
             ImageEntry {
@@ -505,17 +956,19 @@ mod tests {
         let (key, path, size) = runtime.resolve_key(&block).expect("fixture image");
         let mut picker = Picker::halfblocks();
         picker.set_protocol_type(ProtocolType::Kitty);
-        let protocol = decode_and_prepare(&ImageJob {
+        let protocol = decode_job_guarded(&ImageJob {
             block_id: block.id,
             key: key.clone(),
             size,
             picker: picker.clone(),
             path,
             attempts: 0,
+            cancel: Arc::new(AtomicBool::new(false)),
         })
         .expect("decode fixture");
         assert!(matches!(protocol, SlicedProtocol::Kitty(_)));
         runtime.picker = Some(picker);
+        runtime.active = true;
         runtime.entries.insert(
             block.id,
             ImageEntry {

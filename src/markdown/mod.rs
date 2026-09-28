@@ -50,7 +50,7 @@ use blocks::{
 };
 use fences::normalize_code_fences;
 pub(crate) use images::ImageBlockInfo;
-use images::{push_image_placeholder, ImageRenderContext};
+use images::{is_renderable_image_source, push_image_placeholder, ImageRenderContext};
 use links::build_link_spans;
 use lists::{
     end_item, end_list, flush_list_item_spans, list_item_prefix, start_item, start_list, ItemState,
@@ -417,10 +417,12 @@ pub(crate) fn parse_markdown(
         file_mode,
         code_line_numbers,
         None,
+        false,
     )
 }
 
-pub(crate) fn parse_markdown_with_path(
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn parse_markdown_with_images(
     src: &str,
     ss: &syntect::parsing::SyntaxSet,
     theme: &syntect::highlighting::Theme,
@@ -438,6 +440,31 @@ pub(crate) fn parse_markdown_with_path(
         file_mode,
         code_line_numbers,
         document_path,
+        true,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn parse_markdown_with_path(
+    src: &str,
+    ss: &syntect::parsing::SyntaxSet,
+    theme: &syntect::highlighting::Theme,
+    md_theme: &MarkdownTheme,
+    file_mode: bool,
+    code_line_numbers: bool,
+    document_path: Option<&Path>,
+    render_images: bool,
+) -> ParseResult {
+    parse_markdown_with_width_and_path(
+        src,
+        ss,
+        theme,
+        DEFAULT_RENDER_WIDTH,
+        md_theme,
+        file_mode,
+        code_line_numbers,
+        document_path,
+        render_images,
     )
 }
 
@@ -460,6 +487,7 @@ pub(crate) fn parse_markdown_with_width(
         file_mode,
         code_line_numbers,
         None,
+        false,
     )
 }
 
@@ -473,6 +501,7 @@ pub(crate) fn parse_markdown_with_width_and_path(
     file_mode: bool,
     code_line_numbers: bool,
     document_path: Option<&Path>,
+    render_images: bool,
 ) -> ParseResult {
     let image_base_dir = document_path.and_then(Path::parent);
     let original_src = src;
@@ -526,7 +555,14 @@ pub(crate) fn parse_markdown_with_width_and_path(
             .saturating_sub(file_mode_offset)
             .max(1);
         if table.is_some()
-            && handle_table_event(&mut table, &ev, &mut lines, render_width, &mut link_urls)
+            && handle_table_event(
+                &mut table,
+                &ev,
+                &mut lines,
+                render_width,
+                &mut link_urls,
+                render_images,
+            )
         {
             if lines.len() > before {
                 state.mark_table_lines(lines.len(), &lines);
@@ -577,7 +613,7 @@ pub(crate) fn parse_markdown_with_width_and_path(
             }
             MdEvent::Start(Tag::Image {
                 dest_url, title, ..
-            }) => {
+            }) if render_images => {
                 image.push(ImageParseState {
                     id: next_image_id,
                     source: dest_url.to_string(),
@@ -587,7 +623,7 @@ pub(crate) fn parse_markdown_with_width_and_path(
                 });
                 next_image_id += 1;
             }
-            MdEvent::End(TagEnd::Image) => {
+            MdEvent::End(TagEnd::Image) if render_images => {
                 if let Some(image_state) = image.pop() {
                     if let Some(parent) = image.last_mut() {
                         if !parent.alt.is_empty() && !image_state.alt.is_empty() {
@@ -621,6 +657,8 @@ pub(crate) fn parse_markdown_with_width_and_path(
                                 image_base_dir,
                             },
                         );
+                        let renderable = !footnotes.is_active()
+                            && is_renderable_image_source(&image_state.source);
                         let block = ImageBlockInfo {
                             id: image_state.id,
                             source: image_state.source,
@@ -631,7 +669,7 @@ pub(crate) fn parse_markdown_with_width_and_path(
                             rendered_end: lines.len().saturating_sub(1),
                             rendered_width: layout.rendered_width,
                             prefix_width: layout.prefix_width,
-                            renderable: !footnotes.is_active(),
+                            renderable,
                         };
                         if footnotes.is_active() {
                             footnotes.record_image_block(block);

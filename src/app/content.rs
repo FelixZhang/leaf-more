@@ -106,6 +106,7 @@ impl App {
             self.file_mode,
             self.code_line_numbers,
             Some(&path),
+            self.kitty_images_enabled,
         );
 
         let first_load = self.filepath.is_none();
@@ -151,6 +152,7 @@ impl App {
             self.file_mode,
             self.code_line_numbers,
             self.filepath.as_deref(),
+            self.kitty_images_enabled,
         );
         let new_total = parsed.lines.len();
 

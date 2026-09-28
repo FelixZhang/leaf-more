@@ -19,6 +19,8 @@ pub(crate) struct LeafConfig {
     pub(crate) theme: Option<String>,
     pub(crate) editor: Option<String>,
     pub(crate) watch: Option<bool>,
+    #[serde(rename = "kitty-images")]
+    pub(crate) kitty_images: Option<bool>,
     pub(crate) width: Option<usize>,
     pub(crate) extras: Vec<String>,
     #[serde(rename = "main-line-numbers")]

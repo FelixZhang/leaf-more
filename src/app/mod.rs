@@ -40,7 +40,8 @@ pub(crate) use content::{FileChange, FileState};
 
 mod flash;
 pub(crate) use flash::{
-    CodeBlockFlash, EditorFlash, HistoryFlash, LinkFlash, PathFlash, WatchFlash, FLASH_DURATION_MS,
+    CodeBlockFlash, EditorFlash, HistoryFlash, ImageFlash, LinkFlash, PathFlash, WatchFlash,
+    FLASH_DURATION_MS,
 };
 
 pub(crate) mod history;
@@ -92,6 +93,7 @@ pub(crate) struct StatusCacheKey {
     watch: bool,
     flash_active: bool,
     editor_flash_active: bool,
+    image_flash_active: bool,
     file_picker_open: bool,
     picker_loading: bool,
     watch_flash_active: bool,
@@ -176,6 +178,9 @@ pub(crate) struct App {
     pub(crate) code_blocks: Vec<CodeBlockInfo>,
     pub(crate) image_blocks: Vec<ImageBlockInfo>,
     pub(crate) image_runtime: ImageRuntime,
+    pub(crate) kitty_images_enabled: bool,
+    pub(crate) kitty_images_enable_requested: bool,
+    image_flash: Option<(ImageFlash, Instant)>,
     pub(crate) code_select: Option<usize>,
     code_block_flash: Option<(CodeBlockFlash, Instant)>,
     link_flash: Option<(LinkFlash, Instant)>,
@@ -346,6 +351,9 @@ impl App {
             code_blocks: Vec::new(),
             image_blocks: Vec::new(),
             image_runtime,
+            kitty_images_enabled: false,
+            kitty_images_enable_requested: false,
+            image_flash: None,
             code_select: None,
             code_block_flash: None,
             link_flash: None,
@@ -707,6 +715,11 @@ impl App {
                 .unwrap_or(false),
             editor_flash_active: self
                 .editor_flash
+                .as_ref()
+                .map(|(_, t)| t.elapsed() < Duration::from_millis(FLASH_DURATION_MS))
+                .unwrap_or(false),
+            image_flash_active: self
+                .image_flash
                 .as_ref()
                 .map(|(_, t)| t.elapsed() < Duration::from_millis(FLASH_DURATION_MS))
                 .unwrap_or(false),

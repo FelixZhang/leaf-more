@@ -3,7 +3,7 @@ use crate::app::{App, AppConfig, FileChange};
 use crate::cli::parse_cli;
 use crate::markdown::{hash_str, parse_markdown, parse_markdown_with_width, read_file_state};
 use crate::*;
-use crossterm::event::KeyEventKind;
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use std::{
     fs,
     time::{SystemTime, UNIX_EPOCH},
@@ -919,4 +919,24 @@ fn main_line_numbers_config_initializes_and_preserves_across_load_path() {
 
     let _ = fs::remove_file(path1);
     let _ = fs::remove_file(path2);
+}
+
+#[test]
+fn kitty_images_hotkey_accepts_i_and_shift_i_but_not_ctrl_i() {
+    assert!(is_kitty_images_key(&KeyEvent::new(
+        KeyCode::Char('i'),
+        KeyModifiers::NONE,
+    )));
+    assert!(is_kitty_images_key(&KeyEvent::new(
+        KeyCode::Char('I'),
+        KeyModifiers::SHIFT,
+    )));
+    assert!(!is_kitty_images_key(&KeyEvent::new(
+        KeyCode::Char('i'),
+        KeyModifiers::CONTROL,
+    )));
+    assert!(!is_kitty_images_key(&KeyEvent::new(
+        KeyCode::Char('x'),
+        KeyModifiers::NONE,
+    )));
 }

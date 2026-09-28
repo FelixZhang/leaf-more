@@ -39,6 +39,22 @@ pub(super) struct ImageRenderContext<'a> {
     pub(super) image_base_dir: Option<&'a Path>,
 }
 
+pub(super) fn is_renderable_image_source(source: &str) -> bool {
+    let source = source.trim();
+    if source.is_empty() || source.starts_with("data:") || source.contains("://") {
+        return false;
+    }
+    Path::new(source)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "png" | "jpg" | "jpeg" | "gif" | "webp"
+            )
+        })
+}
+
 pub(super) fn push_image_placeholder(
     lines: &mut Vec<Line<'static>>,
     item_stack: &mut [ItemState],

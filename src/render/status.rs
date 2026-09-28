@@ -1,8 +1,8 @@
 use crate::{
     app::{
         history::{msg_history_capped, MSG_HISTORY_WRITE_FAILED},
-        App, CodeBlockFlash, EditorFlash, HistoryFlash, LinkFlash, PathFlash, WatchFlash,
-        FLASH_DURATION_MS,
+        App, CodeBlockFlash, EditorFlash, HistoryFlash, ImageFlash, LinkFlash, PathFlash,
+        WatchFlash, FLASH_DURATION_MS,
     },
     theme::app_theme,
 };
@@ -70,6 +70,22 @@ fn watch_flash_section(app: &App) -> Option<Vec<Span<'static>>> {
         WatchFlash::NoFile => (" No file to watch ", theme.ui.status_error_fg),
         WatchFlash::FileNotFound => (" File not found ", theme.ui.status_error_fg),
         WatchFlash::NotActive => (" Watch mode is not active ", theme.ui.status_warning_fg),
+    };
+    Some(vec![Span::styled(text, Style::default().fg(fg).bg(bar_bg))])
+}
+
+fn image_flash_section(app: &App) -> Option<Vec<Span<'static>>> {
+    let (flash, started) = app.image_flash()?;
+    if started.elapsed() >= std::time::Duration::from_millis(FLASH_DURATION_MS) {
+        return None;
+    }
+    let theme = app_theme();
+    let bar_bg = status_bar_bg();
+    let (text, fg) = match flash {
+        ImageFlash::Enabled => (" Images enabled ", theme.ui.status_success_fg),
+        ImageFlash::Disabled => (" Images disabled ", theme.ui.status_warning_fg),
+        ImageFlash::Unavailable => (" Kitty unavailable ", theme.ui.status_error_fg),
+        ImageFlash::NoImages => (" No images ", theme.ui.status_error_fg),
     };
     Some(vec![Span::styled(text, Style::default().fg(fg).bg(bar_bg))])
 }
@@ -341,6 +357,12 @@ pub(crate) fn build_status_bar(app: &App, pct: u16) -> Vec<Span<'static>> {
     }
 
     if let Some(flash_section) = editor_flash_section(app) {
+        let mut left = status_brand_section();
+        left.extend(flash_section);
+        return join_span_sections(vec![left], outer_separator);
+    }
+
+    if let Some(flash_section) = image_flash_section(app) {
         let mut left = status_brand_section();
         left.extend(flash_section);
         return join_span_sections(vec![left], outer_separator);

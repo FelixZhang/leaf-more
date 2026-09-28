@@ -43,6 +43,14 @@ pub(crate) enum CodeBlockFlash {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum ImageFlash {
+    Enabled,
+    Disabled,
+    Unavailable,
+    NoImages,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum HistoryFlash {
     WriteFailed,
     LengthCapped { was: i32 },
@@ -185,6 +193,21 @@ impl App {
 
     pub(crate) fn code_block_flash(&self) -> Option<(&CodeBlockFlash, &Instant)> {
         self.code_block_flash.as_ref().map(|(f, t)| (f, t))
+    }
+
+    pub(crate) fn set_image_flash(&mut self, flash: ImageFlash) {
+        self.image_flash = Some((flash, Instant::now()));
+        self.status_cache_key = None;
+    }
+
+    pub(crate) fn image_flash(&self) -> Option<(&ImageFlash, &Instant)> {
+        self.image_flash
+            .as_ref()
+            .map(|(flash, started)| (flash, started))
+    }
+
+    pub(crate) fn clear_image_flash(&mut self) {
+        self.image_flash = None;
     }
 
     pub(crate) fn set_history_flash(&mut self, flash: HistoryFlash) {

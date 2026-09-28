@@ -1,6 +1,9 @@
 mod keyboard;
 mod mouse;
 
+#[cfg(test)]
+pub(crate) use keyboard::is_kitty_images_key;
+
 use crate::{
     app::{App, FileChange, FLASH_DURATION_MS},
     render::{ui, CONTENT_HORIZONTAL_PADDING, SCROLLBAR_WIDTH},
@@ -96,6 +99,9 @@ pub(crate) fn run(
             let _ = app.start_pending_picker_loading();
             needs_redraw = true;
         }
+        if app.process_pending_kitty_images() {
+            needs_redraw = true;
+        }
         if app.poll_picker_loading() {
             needs_redraw = true;
         }
@@ -126,6 +132,9 @@ pub(crate) fn run(
         let editor_flash_timeout = app
             .editor_flash()
             .and_then(|(_, started)| EDITOR_FLASH_DURATION.checked_sub(started.elapsed()));
+        let image_flash_timeout = app
+            .image_flash()
+            .and_then(|(_, started)| FLASH_DURATION.checked_sub(started.elapsed()));
         let watch_flash_timeout = app
             .watch_flash()
             .and_then(|(_, started)| WATCH_FLASH_DURATION.checked_sub(started.elapsed()));
@@ -154,6 +163,7 @@ pub(crate) fn run(
             app.image_poll_delay(),
             flash_timeout,
             editor_flash_timeout,
+            image_flash_timeout,
             watch_flash_timeout,
             config_flash_timeout,
             link_flash_timeout,
@@ -274,6 +284,13 @@ pub(crate) fn run(
         if let Some((_, started)) = app.editor_flash() {
             if started.elapsed() >= EDITOR_FLASH_DURATION {
                 app.clear_editor_flash();
+                needs_redraw = true;
+            }
+        }
+
+        if let Some((_, started)) = app.image_flash() {
+            if started.elapsed() >= FLASH_DURATION {
+                app.clear_image_flash();
                 needs_redraw = true;
             }
         }

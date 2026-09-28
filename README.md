@@ -171,7 +171,7 @@ cat TESTING.md | leaf
 
 ## Inline Images (Kitty TUI)
 
-When running the interactive TUI in [Kitty](https://sw.kovidgoyal.net/kitty/), Leaf renders local Markdown images with Kitty's graphics protocol:
+When running the interactive TUI in [Kitty](https://sw.kovidgoyal.net/kitty/), Leaf can render local Markdown images with Kitty's graphics protocol. Image rendering is **disabled by default**. Set `kitty-images = true` in `config.toml`, set `LEAF_KITTY_IMAGES=1`, or press `i` / `I` in the TUI to enable it for the current session:
 
 ```markdown
 ![Architecture diagram](images/architecture.png)
@@ -179,7 +179,9 @@ When running the interactive TUI in [Kitty](https://sw.kovidgoyal.net/kitty/), L
 
 Supported formats are PNG, JPEG, GIF, and WebP. Animated images display their first frame. Relative paths are resolved from the Markdown file's directory; files read from stdin are resolved from the current working directory.
 
-Images are decoded and encoded in a background worker, then rendered inside an aspect-aware document block so scrolling, search, line numbers, TOC resizing, reloads, and terminal resizing keep working. Local image dimensions determine the reserved height, clamped to 12–40 rows; unavailable dimensions use the 12-row minimum. Missing, oversized, remote, SVG, and unsupported images keep a readable image placeholder with their alt text and source.
+Images are decoded and encoded in a background worker, then rendered inside a document block whose height is based on the image aspect ratio, so scrolling, search, line numbers, TOC resizing, reloads, and terminal resizing keep working. Local image dimensions determine the reserved height, clamped to 12–40 rows; unavailable dimensions use the 12-row minimum. Missing, oversized, remote, SVG, and unsupported images keep a readable image placeholder with their alt text and source.
+
+When image rendering is off, Leaf uses its normal upstream Markdown layout: only the alt text is shown, with no image border and no extra reserved rows. Pressing `i/I` reparses the document to create image blocks; turning it off reparses again to remove them.
 
 This first stage intentionally supports only Kitty in the interactive TUI. Other terminals and `--inline` output show the same text placeholder and never receive Kitty control sequences.
 
@@ -243,6 +245,7 @@ This opens the configuration file in your editor. If the file does not exist yet
 theme = "ocean"            # arctic, forest, ocean, solarized-dark, or a custom theme file
 editor = "nano"            # any editor in PATH
 watch = false              # auto-reload when opening a file
+kitty-images = false       # enable local images in the Kitty TUI (toggle with i/I)
 width = 80                 # maximum content width (min: 20, default: terminal width)
 extras = ["txt", "rs"]     # extra file types shown in the picker
 file-picker-width = "75%"  # width of the file picker (fuzzy + file browser)
@@ -353,7 +356,7 @@ See [`gruvbox.toml`](gruvbox.toml) for a complete example with all available col
 | `w` | Toggle watch mode | `Double-Click` (code) | Copy code block |
 | `r` | Force reload (watch mode) | `Shift+Drag` | Select text |
 | `t` | Toggle TOC sidebar | `Option+Drag` | Select text (iTerm2) |
-| `q` | Quit |  |  |
+| `i` / `I` | Toggle Kitty images | `q` | Quit |
 
 ## Features
 
@@ -363,7 +366,7 @@ See [`gruvbox.toml`](gruvbox.toml) for a complete example with all available col
 - **Editor integration** : *Open the current file in your preferred editor*.
 - **Frontmatter support** : *YAML frontmatter rendered as a table (horizontal or vertical based on key count)*.
 - **Rich Markdown rendering** : *Tables, lists, blockquotes, rules, bold, italic, and strikethrough*.
-- **Kitty images** : *Local PNG, JPEG, GIF, and WebP images render in the interactive Kitty TUI with scroll-aware placeholders*.
+- **Kitty images** : *Optional local PNG, JPEG, GIF, and WebP rendering in the interactive Kitty TUI, disabled by default and toggled with `i/I`*.
 - **GitHub extras** : *Alert callouts, task list checkboxes, and `==mark==` text highlighting*.
 - **Inline HTML tags** : *Common inline formatting tags (`<b>`, `<i>`, `<u>`, ...) rendered with proper styling*.
 - **Extra file types** : *Open any file; code files get syntax highlighting, text files render as Markdown*.
@@ -395,6 +398,7 @@ leaf --watch notes.md
 
 ### Images remain placeholders
 
+- Image rendering is disabled by default: set `kitty-images = true`, use `LEAF_KITTY_IMAGES=1`, or press `i/I` in the TUI.
 - Confirm the interactive TUI is running in Kitty, not `--inline` mode.
 - Use a local PNG, JPEG, GIF, or WebP path; HTTP(S), data URLs, and SVG are not downloaded or rendered.
 - Relative image paths are resolved from the Markdown file's directory.

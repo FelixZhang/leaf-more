@@ -55,6 +55,11 @@ Confirm these render correctly:
 
 Run these checks in Kitty with `leaf TESTING.md`:
 
+- confirm the local preview image starts as upstream alt text because `kitty-images` defaults to false, with no image border or reserved rows
+- press `i` and confirm the image renders after the `Images enabled` status flash
+- press `I` and confirm the document collapses back to upstream alt text with no blank image-sized area or stale Kitty pixels
+- press `i` again, then confirm scrolling, resize, TOC, and reload behavior
+- start with `LEAF_KITTY_IMAGES=1` and confirm the image renders without a hotkey press
 - confirm the local preview image renders inside its bordered block
 - scroll down until the image is partially visible, then scroll through and past it
 - toggle line numbers and confirm the image shifts with the text gutter

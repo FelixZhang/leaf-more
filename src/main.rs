@@ -60,11 +60,13 @@ pub(crate) use read_stdin_limited as read_stdin_with_limit;
 #[cfg(test)]
 pub(crate) use render::wrap_path_lines;
 #[cfg(test)]
+pub(crate) use resolve_kitty_images as test_resolve_kitty_images;
+#[cfg(test)]
 pub(crate) use resolve_main_line_numbers as test_resolve_main_line_numbers;
 #[cfg(test)]
 pub(crate) use resolve_tab_title_length_n as test_resolve_tab_title_length_n;
 #[cfg(test)]
-pub(crate) use runtime::should_handle_key;
+pub(crate) use runtime::{is_kitty_images_key, should_handle_key};
 #[cfg(test)]
 pub(crate) use theme::{
     parse_theme_color, parse_theme_preset, theme_preset_label, CustomThemeConfig, ThemePreset,
@@ -133,6 +135,17 @@ fn resolve_code_line_numbers(config_value: Option<bool>) -> bool {
         }
     }
     config_value.unwrap_or(true)
+}
+
+fn resolve_kitty_images(config_value: Option<bool>) -> bool {
+    if let Ok(val) = std::env::var("LEAF_KITTY_IMAGES") {
+        match val.as_str() {
+            "1" => return true,
+            "0" => return false,
+            _ => {}
+        }
+    }
+    config_value.unwrap_or(false)
 }
 
 const LEAF_TAB_PREFIX_LEN: usize = 6;
@@ -296,6 +309,7 @@ fn main() -> Result<()> {
     let max_width = resolve_configured_width(cli_width, user_config.width);
     let main_line_numbers = resolve_main_line_numbers(user_config.main_line_numbers);
     let code_line_numbers = resolve_code_line_numbers(user_config.code_line_numbers);
+    let kitty_images = resolve_kitty_images(user_config.kitty_images);
     let tab_title_length = resolve_tab_title_length_n(user_config.tab_title_length);
     let tab_title_max_filename_len = tab_title_length.and_then(tab_title_n_to_max_filename_len);
     let file_picker_width = resolve_file_picker_width(user_config.file_picker_width);
@@ -456,6 +470,7 @@ fn main() -> Result<()> {
             file_mode,
             code_line_numbers,
             filepath.as_deref(),
+            false,
         );
 
         while parsed.lines.last().is_some_and(|l| {
@@ -480,6 +495,7 @@ fn main() -> Result<()> {
         file_mode,
         code_line_numbers,
         filepath.as_deref(),
+        kitty_images,
     );
     let crate::markdown::ParseResult {
         lines,
@@ -502,6 +518,7 @@ fn main() -> Result<()> {
             last_file_state,
         },
     );
+    app.set_kitty_images_enabled(kitty_images);
     app.set_link_spans(link_spans);
     app.set_code_blocks(code_blocks);
     app.set_image_blocks(image_blocks);

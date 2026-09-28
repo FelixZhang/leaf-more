@@ -1,6 +1,6 @@
 use super::{lock_theme_test_state, test_assets, test_md_theme};
 use crate::app::{App, AppConfig};
-use crate::markdown::parse_markdown;
+use crate::markdown::{parse_markdown, parse_markdown_with_images};
 use crate::theme::{
     current_syntect_theme, current_theme_preset, current_theme_selection, resolve_theme_selection,
     set_theme_preset, set_theme_selection, theme_preset_index, validate_theme_syntax,
@@ -162,7 +162,8 @@ fn theme_preview_and_restore_preserve_image_blocks() {
     let (ss, theme) = test_assets();
     let ts = ThemeSet::load_defaults();
     let source = "![diagram](diagram.png)\n";
-    let parsed = parse_markdown(source, &ss, &theme, &test_md_theme(), false, true);
+    let parsed =
+        parse_markdown_with_images(source, &ss, &theme, &test_md_theme(), false, true, None);
     let image_blocks = parsed.image_blocks.clone();
     let crate::markdown::ParseResult {
         lines,
@@ -184,6 +185,7 @@ fn theme_preview_and_restore_preserve_image_blocks() {
         },
     );
     app.set_image_blocks(image_blocks);
+    app.set_kitty_images_enabled(true);
 
     let original = current_theme_selection();
     set_theme_preset(ThemePreset::OceanDark);

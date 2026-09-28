@@ -1,5 +1,5 @@
 use super::{find_symbol, render_buffer, test_assets, test_md_theme};
-use crate::app::App;
+use crate::app::{App, ImageFlash};
 use crate::markdown::{parse_markdown, parse_markdown_with_width};
 use crate::wrap_path_lines;
 use ratatui::style::Style;
@@ -238,4 +238,57 @@ fn path_popup_copy_status_uses_reserved_row_without_moving_paths() {
             assert_eq!(draw(&mut app, width), idle, "expired status must clear");
         }
     }
+}
+
+#[test]
+fn help_and_status_show_kitty_images_state() {
+    use ratatui::{backend::TestBackend, buffer::Buffer, Terminal};
+
+    fn draw(app: &mut App) -> Buffer {
+        let mut terminal = Terminal::new(TestBackend::new(80, 30)).unwrap();
+        terminal
+            .draw(|frame| crate::render::ui(frame, app))
+            .unwrap();
+        terminal.backend().buffer().clone()
+    }
+
+    fn buffer_text(buffer: &Buffer) -> String {
+        (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer.cell((x, y)).unwrap().symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    let mut app = App::new(
+        Vec::new(),
+        Vec::new(),
+        "test".to_string(),
+        false,
+        false,
+        None,
+        None,
+    );
+    app.open_help();
+    assert!(buffer_text(&draw(&mut app)).contains("images: off"));
+    app.set_kitty_images_enabled(true);
+    assert!(buffer_text(&draw(&mut app)).contains("images: off"));
+    app.set_kitty_images_rendering_for_test();
+    assert!(buffer_text(&draw(&mut app)).contains("images: on"));
+
+    app.close_help();
+    app.set_image_flash(ImageFlash::Enabled);
+    assert!(buffer_text(&draw(&mut app)).contains("Images enabled"));
+    app.clear_image_flash();
+    app.set_image_flash(ImageFlash::Disabled);
+    assert!(buffer_text(&draw(&mut app)).contains("Images disabled"));
+    app.clear_image_flash();
+    app.set_image_flash(ImageFlash::NoImages);
+    assert!(buffer_text(&draw(&mut app)).contains("No images"));
+    app.clear_image_flash();
+    app.set_image_flash(ImageFlash::Unavailable);
+    assert!(buffer_text(&draw(&mut app)).contains("Kitty unavailable"));
 }
