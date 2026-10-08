@@ -104,6 +104,8 @@ theme_overrides!(UiThemeOverrides for UiTheme {
     status_filename_bg,
     status_watch_fg,
     status_watch_bg,
+    status_image_fg,
+    status_image_bg,
     status_reloaded_fg,
     status_reloaded_bg,
     status_search_fg,
