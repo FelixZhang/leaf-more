@@ -49,8 +49,6 @@ pub(crate) struct UiTheme {
     pub(crate) status_filename_bg: Color,
     pub(crate) status_watch_fg: Color,
     pub(crate) status_watch_bg: Color,
-    pub(crate) status_image_fg: Color,
-    pub(crate) status_image_bg: Color,
     pub(crate) status_reloaded_fg: Color,
     pub(crate) status_reloaded_bg: Color,
     pub(crate) status_search_fg: Color,

@@ -135,8 +135,8 @@ pub(crate) fn status_images_section(app: &App) -> Option<Vec<Span<'static>>> {
     Some(vec![Span::styled(
         " ▨ img ",
         Style::default()
-            .fg(theme.ui.status_image_fg)
-            .bg(theme.ui.status_image_bg),
+            .fg(theme.ui.status_success_fg)
+            .bg(theme.ui.status_success_bg),
     )])
 }
 
