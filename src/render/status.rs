@@ -127,6 +127,19 @@ pub(crate) fn status_watch_section(app: &App) -> Option<Vec<Span<'static>>> {
     Some(vec![span])
 }
 
+pub(crate) fn status_images_section(app: &App) -> Option<Vec<Span<'static>>> {
+    if !app.is_kitty_images_rendering() {
+        return None;
+    }
+    let theme = app_theme();
+    Some(vec![Span::styled(
+        " ▨ img ",
+        Style::default()
+            .fg(theme.ui.status_success_fg)
+            .bg(theme.ui.status_success_bg),
+    )])
+}
+
 pub(crate) fn status_search_section(app: &App) -> Option<Vec<Span<'static>>> {
     let theme = app_theme();
     if app.is_search_mode() {
@@ -428,6 +441,9 @@ pub(crate) fn build_status_bar(app: &App, pct: u16) -> Vec<Span<'static>> {
     let file_open = app.has_content() || (!app.is_file_picker_open() && !app.is_picker_loading());
     if file_open {
         if let Some(section) = status_watch_section(app) {
+            left_section.extend(section);
+        }
+        if let Some(section) = status_images_section(app) {
             left_section.extend(section);
         }
     }

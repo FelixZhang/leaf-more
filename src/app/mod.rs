@@ -91,6 +91,7 @@ pub(crate) struct StatusCacheKey {
     goto_line_target: Option<usize>,
     goto_line_error: bool,
     watch: bool,
+    images_active: bool,
     flash_active: bool,
     editor_flash_active: bool,
     image_flash_active: bool,
@@ -709,6 +710,7 @@ impl App {
             goto_line_target: self.goto_line.target,
             goto_line_error: self.goto_line.error,
             watch: self.watch,
+            images_active: self.is_kitty_images_rendering(),
             flash_active: self
                 .reload_flash
                 .map(|t| t.elapsed() < Duration::from_millis(FLASH_DURATION_MS))

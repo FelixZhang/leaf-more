@@ -280,6 +280,8 @@ fn help_and_status_show_kitty_images_state() {
     assert!(buffer_text(&draw(&mut app)).contains("images: on"));
 
     app.close_help();
+    assert!(buffer_text(&draw(&mut app)).contains("▨ img"));
+
     app.set_image_flash(ImageFlash::Enabled);
     assert!(buffer_text(&draw(&mut app)).contains("Images enabled"));
     app.clear_image_flash();
@@ -291,4 +293,7 @@ fn help_and_status_show_kitty_images_state() {
     app.clear_image_flash();
     app.set_image_flash(ImageFlash::Unavailable);
     assert!(buffer_text(&draw(&mut app)).contains("Kitty unavailable"));
+
+    app.set_kitty_images_enabled(false);
+    assert!(!buffer_text(&draw(&mut app)).contains("▨ img"));
 }
