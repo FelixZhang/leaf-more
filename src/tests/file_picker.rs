@@ -300,3 +300,123 @@ fn fuzzy_file_picker_page_moves_jump_and_clamp_at_edges() {
 
     let _ = fs::remove_dir_all(root);
 }
+
+#[test]
+fn browser_file_picker_query_filters_by_substring() {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!("leaf-browser-filter-test-{unique}"));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(root.join("notes")).unwrap();
+    fs::write(root.join("README.md"), "# Demo\n").unwrap();
+    fs::write(root.join("draft.markdown"), "# Draft\n").unwrap();
+    fs::write(root.join("report.md"), "# Report\n").unwrap();
+
+    let mut app = App::new_with_source(
+        Vec::new(),
+        Vec::new(),
+        AppConfig {
+            filename: "picker".to_string(),
+            source: String::new(),
+            debug_input: false,
+            watch: false,
+            filepath: None,
+            last_file_state: None,
+        },
+    );
+
+    assert!(app.open_file_picker(root.clone()));
+    assert_eq!(app.file_picker_filtered_indices().len(), 5); // ".." + dir + 3 files
+    assert!(!app.is_browser_filtering());
+
+    app.start_browser_filter();
+    assert!(app.is_browser_filtering());
+
+    app.push_file_picker_query('r');
+    let labels: Vec<_> = app
+        .file_picker_filtered_indices()
+        .iter()
+        .map(|idx| app.file_picker_entries()[*idx].label())
+        .collect();
+    assert_eq!(labels, vec!["draft.markdown", "README.md", "report.md"]);
+
+    app.push_file_picker_query('e');
+    let labels: Vec<_> = app
+        .file_picker_filtered_indices()
+        .iter()
+        .map(|idx| app.file_picker_entries()[*idx].label())
+        .collect();
+    assert_eq!(labels, vec!["README.md", "report.md"]);
+    // contiguous "re" highlight at char index 0..2
+    assert_eq!(app.file_picker_match_positions(0), &[0, 1]);
+
+    app.pop_file_picker_query();
+    assert_eq!(app.file_picker_filtered_indices().len(), 3);
+
+    app.clear_file_picker_query();
+    assert_eq!(app.file_picker_filtered_indices().len(), 5);
+
+    app.push_file_picker_query('z');
+    assert!(app.file_picker_filtered_indices().is_empty());
+    assert_eq!(app.file_picker_index(), 0);
+
+    app.exit_browser_filter();
+    assert!(!app.is_browser_filtering());
+    assert!(app.file_picker_query().is_empty());
+    assert_eq!(app.file_picker_filtered_indices().len(), 5);
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn browser_file_picker_filter_jumps_keep_working() {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!("leaf-browser-filter-nav-test-{unique}"));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    for idx in 0..15 {
+        fs::write(root.join(format!("note{idx:02}.md")), "# Demo\n").unwrap();
+    }
+
+    let mut app = App::new_with_source(
+        Vec::new(),
+        Vec::new(),
+        AppConfig {
+            filename: "picker".to_string(),
+            source: String::new(),
+            debug_input: false,
+            watch: false,
+            filepath: None,
+            last_file_state: None,
+        },
+    );
+
+    assert!(app.open_file_picker(root.clone()));
+    app.start_browser_filter();
+
+    for ch in "note1".chars() {
+        app.push_file_picker_query(ch);
+    }
+    let total = app.file_picker_filtered_indices().len();
+    assert_eq!(total, 5); // note10.md .. note14.md
+
+    app.move_file_picker_page_down();
+    assert_eq!(app.file_picker_index(), total - 1);
+
+    // empty query inside filter mode keeps the mode (placeholder state)
+    assert!(app.is_browser_filtering());
+    app.clear_file_picker_query();
+    assert_eq!(app.file_picker_filtered_indices().len(), 16); // ".." + 15 files
+                                                              // clearing keeps the cursor position (clamped), it does not reset to 0
+    app.move_file_picker_page_down();
+    assert_eq!(app.file_picker_index(), 14);
+    app.exit_browser_filter();
+    assert!(!app.is_browser_filtering());
+
+    let _ = fs::remove_dir_all(root);
+}

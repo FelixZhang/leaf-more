@@ -48,6 +48,7 @@ pub(crate) mod history;
 pub(crate) use history::load_history;
 
 mod history_picker;
+pub(crate) mod link_picker;
 pub(crate) use history_picker::HistoryPickerState;
 
 mod popups;
@@ -175,6 +176,7 @@ pub(crate) struct App {
     watch_flash: Option<(WatchFlash, Instant)>,
     config_flash: Option<(String, Instant)>,
     pub(crate) link_spans_by_line: HashMap<usize, Vec<LinkSpan>>,
+    pub(crate) link_picker: link_picker::LinkPickerState,
     pub(crate) hovered_link: Option<(usize, usize)>,
     pub(crate) code_blocks: Vec<CodeBlockInfo>,
     pub(crate) image_blocks: Vec<ImageBlockInfo>,
@@ -317,9 +319,12 @@ impl App {
                 match_positions: Vec::new(),
                 index: 0,
                 query: String::new(),
+                filter_active: false,
+                path_match: false,
                 truncation: None,
             },
             history_picker: HistoryPickerState::default(),
+            link_picker: link_picker::LinkPickerState::default(),
             pending_picker: PendingPicker::None,
             picker_load_state: PickerLoadState::Idle,
             file_history_length: None,

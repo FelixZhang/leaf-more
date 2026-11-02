@@ -82,6 +82,11 @@ pub(crate) struct FilePickerState {
     pub(super) match_positions: Vec<Vec<usize>>,
     pub(super) index: usize,
     pub(super) query: String,
+    /// Browser-only: `/` toggles an explicit filter pass so letter hotkeys
+    /// (j/k/h/q/P) keep their browse meaning until filtering is requested.
+    pub(super) filter_active: bool,
+    /// Fuzzy-only: match the full relative path instead of the file name.
+    pub(super) path_match: bool,
     pub(super) truncation: Option<PickerIndexTruncation>,
 }
 
@@ -404,6 +409,38 @@ impl App {
         self.file_picker.mode == FilePickerMode::Browser
     }
 
+    pub(crate) fn is_browser_filtering(&self) -> bool {
+        self.is_browser_file_picker() && self.file_picker.filter_active
+    }
+
+    pub(crate) fn start_browser_filter(&mut self) {
+        if self.is_browser_file_picker() {
+            self.file_picker.filter_active = true;
+        }
+    }
+
+    pub(crate) fn fuzzy_path_match(&self) -> bool {
+        self.file_picker.path_match
+    }
+
+    pub(crate) fn toggle_fuzzy_path_match(&mut self) -> bool {
+        if !self.is_fuzzy_file_picker() {
+            return false;
+        }
+        self.file_picker.path_match = !self.file_picker.path_match;
+        self.refresh_file_picker_matches();
+        true
+    }
+
+    pub(crate) fn exit_browser_filter(&mut self) {
+        if !self.is_browser_file_picker() {
+            return;
+        }
+        self.file_picker.filter_active = false;
+        self.file_picker.query.clear();
+        self.refresh_file_picker_matches();
+    }
+
     pub(crate) fn is_file_picker_open(&self) -> bool {
         self.file_picker.open
     }
@@ -411,6 +448,7 @@ impl App {
     pub(crate) fn close_file_picker(&mut self) {
         self.file_picker.open = false;
         self.file_picker.query.clear();
+        self.file_picker.filter_active = false;
         self.file_picker.entries.clear();
         self.file_picker.filtered.clear();
         self.file_picker.match_positions.clear();
@@ -494,25 +532,16 @@ impl App {
     }
 
     pub(crate) fn push_file_picker_query(&mut self, ch: char) {
-        if self.is_browser_file_picker() {
-            return;
-        }
         self.file_picker.query.push(ch);
         self.refresh_file_picker_matches();
     }
 
     pub(crate) fn pop_file_picker_query(&mut self) {
-        if self.is_browser_file_picker() {
-            return;
-        }
         self.file_picker.query.pop();
         self.refresh_file_picker_matches();
     }
 
     pub(crate) fn clear_file_picker_query(&mut self) {
-        if self.is_browser_file_picker() {
-            return;
-        }
         self.file_picker.query.clear();
         self.refresh_file_picker_matches();
     }

@@ -51,6 +51,8 @@ pub(crate) fn ui(f: &mut Frame, app: &mut App) {
         popup_picker::render_history_loading_popup(f, app);
     } else if app.is_history_picker_open() {
         popup_picker::render_history_popup(f, app);
+    } else if app.is_link_picker_open() {
+        popup_picker::render_link_picker_popup(f, app);
     } else if app.is_picker_loading() || app.is_picker_load_failed() {
         popup_picker::render_picker_loading_popup(f, app);
     } else if app.is_file_picker_open() {

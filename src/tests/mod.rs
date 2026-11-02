@@ -20,6 +20,7 @@ mod file_fuzzy;
 mod file_picker;
 mod history_picker;
 mod inline;
+mod link_picker;
 mod markdown_blocks;
 mod markdown_embedded;
 mod markdown_footnotes;

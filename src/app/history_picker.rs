@@ -31,6 +31,7 @@ impl App {
             || self.is_picker_loading()
             || self.is_file_picker_open()
             || self.is_history_picker_open()
+            || self.is_link_picker_open()
     }
 
     pub(crate) fn close_history_picker(&mut self) {

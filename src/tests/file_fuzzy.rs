@@ -564,3 +564,71 @@ fn fuzzy_file_picker_reports_file_limit_truncation() {
 
     let _ = fs::remove_dir_all(root);
 }
+
+#[test]
+fn fuzzy_path_match_toggle_switches_matching_scope() {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!("leaf-fuzzy-path-toggle-{unique}"));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(root.join("docs")).unwrap();
+    fs::write(root.join("docs/guide.md"), "# Guide\n").unwrap();
+    fs::write(root.join("readme.md"), "# Readme\n").unwrap();
+
+    let mut app = App::new_with_source(
+        Vec::new(),
+        Vec::new(),
+        AppConfig {
+            filename: "picker".to_string(),
+            source: String::new(),
+            debug_input: false,
+            watch: false,
+            filepath: None,
+            last_file_state: None,
+        },
+    );
+
+    assert!(app.open_fuzzy_file_picker(root.clone()));
+    assert!(!app.fuzzy_path_match());
+
+    let labels = |app: &App| -> Vec<String> {
+        app.file_picker_filtered_indices()
+            .iter()
+            .map(|idx| app.file_picker_entries()[*idx].label().to_string())
+            .collect()
+    };
+
+    // path fragment only matches with path mode on
+    for ch in "doc/gui".chars() {
+        app.push_file_picker_query(ch);
+    }
+    assert!(labels(&app).is_empty());
+
+    assert!(app.toggle_fuzzy_path_match());
+    assert!(app.fuzzy_path_match());
+    assert_eq!(labels(&app), vec!["docs/guide.md"]);
+    // subsequence match: 'd','o','c' then '/' at index 4, then 'g','u','i'
+    assert_eq!(app.file_picker_match_positions(0), &[0, 1, 2, 4, 5, 6, 7]);
+
+    // toggle back off: the path fragment no longer matches
+    assert!(app.toggle_fuzzy_path_match());
+    assert!(labels(&app).is_empty());
+
+    // file-name matching is unaffected by the toggle
+    app.clear_file_picker_query();
+    for ch in "guide".chars() {
+        app.push_file_picker_query(ch);
+    }
+    assert_eq!(labels(&app), vec!["docs/guide.md"]);
+    assert!(app.toggle_fuzzy_path_match());
+    assert_eq!(labels(&app), vec!["docs/guide.md"]);
+
+    // browser mode has no path toggle
+    assert!(app.open_file_picker(root.clone()));
+    assert!(!app.toggle_fuzzy_path_match());
+    assert!(!app.fuzzy_path_match());
+
+    let _ = fs::remove_dir_all(root);
+}

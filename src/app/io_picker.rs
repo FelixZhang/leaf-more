@@ -171,8 +171,26 @@ impl App {
 
     pub(super) fn refresh_file_picker_matches(&mut self) {
         if self.is_browser_file_picker() {
-            self.file_picker.filtered = (0..self.file_picker.entries.len()).collect();
-            self.file_picker.match_positions = vec![Vec::new(); self.file_picker.filtered.len()];
+            let query = self.file_picker.query.trim().to_lowercase();
+            if query.is_empty() {
+                self.file_picker.filtered = (0..self.file_picker.entries.len()).collect();
+                self.file_picker.match_positions =
+                    vec![Vec::new(); self.file_picker.filtered.len()];
+            } else {
+                let mut filtered = Vec::new();
+                let mut match_positions = Vec::new();
+                let query_len = query.chars().count();
+                for (idx, entry) in self.file_picker.entries.iter().enumerate() {
+                    let Some(byte_idx) = entry.label_lower().find(&query) else {
+                        continue;
+                    };
+                    let char_idx = entry.label_lower()[..byte_idx].chars().count();
+                    filtered.push(idx);
+                    match_positions.push((char_idx..char_idx + query_len).collect::<Vec<usize>>());
+                }
+                self.file_picker.filtered = filtered;
+                self.file_picker.match_positions = match_positions;
+            }
             self.file_picker.index = self
                 .file_picker
                 .index
@@ -197,16 +215,18 @@ impl App {
             .iter()
             .enumerate()
             .filter_map(|(idx, entry)| {
-                super::fuzzy::fuzzy_match(entry, &query).map(|(score, positions)| {
-                    (
-                        idx,
-                        score,
-                        entry.path_depth(),
-                        entry.file_name_lower(),
-                        entry.label_lower(),
-                        positions,
-                    )
-                })
+                super::fuzzy::fuzzy_match(entry, &query, self.file_picker.path_match).map(
+                    |(score, positions)| {
+                        (
+                            idx,
+                            score,
+                            entry.path_depth(),
+                            entry.file_name_lower(),
+                            entry.label_lower(),
+                            positions,
+                        )
+                    },
+                )
             })
             .collect::<Vec<_>>();
 
@@ -243,6 +263,8 @@ impl App {
         self.file_picker.open = true;
         self.file_picker.mode = mode;
         self.file_picker.dir = dir;
+        self.file_picker.filter_active = false;
+        self.file_picker.path_match = false;
         self.file_picker.entries = result.entries;
         self.file_picker.index = 0;
         self.file_picker.truncation = if mode == FilePickerMode::Fuzzy {

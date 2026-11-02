@@ -128,6 +128,8 @@ impl App {
         self.scroll = 0;
         self.help_open = false;
         self.file_picker.open = false;
+        self.file_picker.filter_active = false;
+        self.link_picker.open = false;
         self.theme_picker.open = false;
         self.search.mode = false;
         self.reset_search_state();

@@ -26,6 +26,7 @@ pub(crate) enum WatchFlash {
 pub(crate) enum LinkFlash {
     Copied,
     CopyFailed,
+    TargetNotFound(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

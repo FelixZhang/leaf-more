@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - render local PNG, JPEG, GIF, and WebP images in the interactive Kitty TUI with background decoding and scroll-aware placement
 - add `kitty-images` configuration (disabled by default) and an `i/I` session toggle that cancels image workers when disabled
 - make disabled image mode match upstream Markdown output by showing alt text without reserved image geometry
+- add a `/` quick filter to the file browser picker
+- add a `Ctrl+R` toggle in the fuzzy picker to match full relative paths instead of file names only
+- add a link list popup (`Shift+O`) that lists every link in the document with type-to-filter; enter opens external links, jumps to the heading for internal `#anchor` links, and loads local markdown links in the viewer
 - support page jumps with `PageUp`/`PageDown` and `Ctrl+D`/`Ctrl+U` in the file and history pickers
 - retain readable image placeholders for unsupported terminals, invalid images, tables, footnotes, and `--inline` output
 

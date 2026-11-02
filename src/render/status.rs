@@ -292,9 +292,13 @@ fn link_flash_section(app: &App) -> Option<Vec<Span<'static>>> {
     }
     let theme = app_theme();
     let bar_bg = status_bar_bg();
-    let (text, fg) = match flash {
-        LinkFlash::Copied => (" Copied to clipboard ", theme.ui.status_success_fg),
-        LinkFlash::CopyFailed => (clipboard_hint(), theme.ui.status_error_fg),
+    let (text, fg): (std::borrow::Cow<'_, str>, _) = match flash {
+        LinkFlash::Copied => (" Copied to clipboard ".into(), theme.ui.status_success_fg),
+        LinkFlash::CopyFailed => (clipboard_hint().into(), theme.ui.status_error_fg),
+        LinkFlash::TargetNotFound(url) => (
+            format!(" Link target not found: {url} ").into(),
+            theme.ui.status_warning_fg,
+        ),
     };
     Some(vec![Span::styled(text, Style::default().fg(fg).bg(bar_bg))])
 }

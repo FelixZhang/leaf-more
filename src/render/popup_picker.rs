@@ -11,7 +11,8 @@ use ratatui::{
 
 use super::centered_rect;
 use super::popup::{
-    highlighted_picker_label, picker_truncation_message, popup_footer, popup_footer_line,
+    highlighted_picker_label, highlighted_picker_label_with_fg, picker_truncation_message,
+    popup_footer, popup_footer_line,
 };
 
 const HISTORY_POPUP_TITLE: &str = "Open from file history";
@@ -39,7 +40,8 @@ pub(super) fn render_file_popup(f: &mut Frame, app: &mut App) {
     let section_style = Style::default().fg(theme.ui.status_shortcut_fg);
 
     let inner_height = area.height.saturating_sub(2) as usize;
-    let header_lines = if app.is_fuzzy_file_picker() { 4 } else { 3 };
+    let show_query = app.is_fuzzy_file_picker() || app.is_browser_filtering();
+    let header_lines = if show_query { 4 } else { 3 };
     let total = app.file_picker_filtered_indices().len();
     let truncation_message = picker_truncation_message(app.file_picker_truncation());
     let max_visible_slots = if app.is_fuzzy_file_picker() {
@@ -48,6 +50,8 @@ pub(super) fn render_file_popup(f: &mut Frame, app: &mut App) {
         } else {
             12
         }
+    } else if show_query {
+        12
     } else {
         13
     };
@@ -73,15 +77,28 @@ pub(super) fn render_file_popup(f: &mut Frame, app: &mut App) {
         ]),
     ];
 
-    if app.is_fuzzy_file_picker() {
+    if show_query {
+        let query_text = if app.is_fuzzy_file_picker() {
+            let (scope, other) = if app.fuzzy_path_match() {
+                ("full path", "file name")
+            } else {
+                ("file name", "full path")
+            };
+            if app.file_picker_query().is_empty() {
+                format!(" type to filter (matching {scope}, ctrl+r = {other}) ")
+            } else {
+                format!(
+                    " {} (matching {scope}, ctrl+r = {other}) ",
+                    app.file_picker_query()
+                )
+            }
+        } else {
+            " type to filter ".to_string()
+        };
         lines.push(Line::from(vec![
             Span::styled("Query: ", section_style),
             Span::styled(
-                if app.file_picker_query().is_empty() {
-                    " type to filter ".to_string()
-                } else {
-                    format!(" {} ", app.file_picker_query())
-                },
+                query_text,
                 Style::default()
                     .fg(if app.file_picker_query().is_empty() {
                         theme.ui.toc_primary_inactive
@@ -123,7 +140,7 @@ pub(super) fn render_file_popup(f: &mut Frame, app: &mut App) {
                 theme.ui.toc_bg
             };
             let marker = if selected { "▎ " } else { "  " };
-            let label_spans = if app.is_fuzzy_file_picker() {
+            let label_spans = if show_query {
                 highlighted_picker_label(
                     entry.label(),
                     app.file_picker_match_positions(actual_idx),
@@ -672,6 +689,161 @@ pub(super) fn render_editor_popup(f: &mut Frame, app: &App) {
         Paragraph::new(lines).block(
             Block::default()
                 .title("─ Editor ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.ui.toc_border))
+                .style(Style::default().bg(theme.ui.toc_bg))
+                .padding(Padding::new(1, 1, 0, 0)),
+        ),
+        area,
+    );
+}
+
+const LINK_PICKER_TITLE: &str = "Open a link from this document";
+const LINK_PICKER_BORDER: &str = "─ Links ";
+const LINK_PICKER_FOOTER: &[&str] = &[
+    "↑/↓ move",
+    "pgup/dn",
+    "<char> filter",
+    "enter open",
+    "esc close",
+];
+
+pub(super) fn render_link_picker_popup(f: &mut Frame, app: &mut App) {
+    let theme = app_theme();
+    let area = picker_area(f, app, 20);
+    let title_style = Style::default()
+        .fg(theme.markdown.heading_2)
+        .add_modifier(Modifier::BOLD);
+    let section_style = Style::default().fg(theme.ui.status_shortcut_fg);
+
+    let inner_height = area.height.saturating_sub(2) as usize;
+    let header_lines = 3;
+    let reserved_footer_lines = 2;
+    let visible_slots = inner_height
+        .saturating_sub(header_lines + reserved_footer_lines)
+        .min(12);
+    let total = app.link_picker_filtered_indices().len();
+    let start = if visible_slots == 0 || app.link_picker_index() < visible_slots {
+        0
+    } else {
+        app.link_picker_index() + 1 - visible_slots
+    };
+    let end = (start + visible_slots).min(total);
+
+    let mut lines = vec![
+        Line::from(vec![Span::styled(LINK_PICKER_TITLE, title_style)]),
+        Line::from(vec![
+            Span::styled("Query: ", section_style),
+            Span::styled(
+                if app.link_picker_query().is_empty() {
+                    " type to filter ".to_string()
+                } else {
+                    format!(" {} ", app.link_picker_query())
+                },
+                Style::default()
+                    .fg(if app.link_picker_query().is_empty() {
+                        theme.ui.toc_primary_inactive
+                    } else {
+                        theme.ui.toc_primary_active
+                    })
+                    .bg(theme.markdown.inline_code_bg),
+            ),
+        ]),
+        Line::from(""),
+    ];
+
+    let inner_width = area.width.saturating_sub(4) as usize;
+    // row budget: marker(2) + " ("(2) + ")"(1) between label and url
+    let row_max = inner_width.saturating_sub(5);
+    let text_max = row_max * 2 / 5;
+    let url_max = row_max.saturating_sub(text_max);
+
+    if let Some(err) = app.link_picker_error() {
+        lines.push(Line::from(vec![Span::styled(
+            err.to_string(),
+            Style::default().fg(theme.ui.toc_primary_inactive),
+        )]));
+    } else if total == 0 {
+        lines.push(Line::from(vec![Span::styled(
+            "No match for the current query",
+            Style::default().fg(theme.ui.toc_primary_inactive),
+        )]));
+    } else {
+        for (idx, entry_idx) in app.link_picker_filtered_indices()[start..end]
+            .iter()
+            .enumerate()
+        {
+            let actual_idx = start + idx;
+            let selected = actual_idx == app.link_picker_index();
+            let entry = &app.link_picker_entries()[*entry_idx];
+            let bg = if selected {
+                theme.ui.toc_active_bg
+            } else {
+                theme.ui.toc_bg
+            };
+            let marker = if selected { "▎ " } else { "  " };
+            let modifier = if selected {
+                Modifier::BOLD
+            } else {
+                Modifier::empty()
+            };
+            let mut spans = vec![Span::styled(
+                marker,
+                Style::default()
+                    .fg(theme.ui.toc_accent)
+                    .bg(bg)
+                    .add_modifier(modifier),
+            )];
+            let in_url = app.link_picker_matched_in_url(actual_idx);
+            let (text_positions, url_positions) = if in_url {
+                (&[] as &[usize], app.link_picker_match_positions(actual_idx))
+            } else {
+                (app.link_picker_match_positions(actual_idx), &[] as &[usize])
+            };
+            // only the non-matched side may be truncated: highlight positions
+            // index into the full matched string
+            let text_label = if in_url {
+                truncate_middle(&entry.text, text_max.max(8))
+            } else {
+                entry.text.clone()
+            };
+            let url_label = if in_url {
+                entry.url.clone()
+            } else {
+                truncate_middle(&entry.url, url_max.max(8))
+            };
+            spans.extend(highlighted_picker_label_with_fg(
+                &text_label,
+                text_positions,
+                bg,
+                selected,
+                theme.ui.toc_primary_active,
+            ));
+            let dim = Style::default().fg(theme.ui.toc_primary_inactive).bg(bg);
+            spans.push(Span::styled(" (", dim));
+            spans.extend(highlighted_picker_label(
+                &url_label,
+                url_positions,
+                bg,
+                selected,
+            ));
+            spans.push(Span::styled(")", dim));
+            lines.push(Line::from(spans));
+        }
+    }
+
+    while lines.len() < inner_height.saturating_sub(reserved_footer_lines) {
+        lines.push(Line::from(""));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(popup_footer_line(LINK_PICKER_FOOTER, theme.ui.toc_bg));
+
+    f.render_widget(Clear, area);
+    f.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .title(LINK_PICKER_BORDER)
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(theme.ui.toc_border))
                 .style(Style::default().bg(theme.ui.toc_bg))

@@ -163,33 +163,98 @@ pub(super) fn handle_key_event(
             }
             _ => state_changed = false,
         }
+    } else if app.is_link_picker_open() {
+        let has_content = app.has_content();
+        match key.code {
+            KeyCode::Enter => {
+                if let Some(action) = app.activate_link_picker_selection() {
+                    match action {
+                        crate::app::link_picker::LinkAction::Load(path) => {
+                            app.load_path(path, ss, themes);
+                        }
+                        crate::app::link_picker::LinkAction::Open(url) => {
+                            std::thread::spawn(move || {
+                                crate::clipboard::open_url(&url);
+                            });
+                        }
+                    }
+                }
+                state_changed = true;
+            }
+            KeyCode::Esc => {
+                if !app.link_picker_query().is_empty() {
+                    app.clear_link_picker_query();
+                } else if has_content {
+                    app.close_link_picker();
+                } else {
+                    return Ok(HandleResult::Break);
+                }
+            }
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if has_content {
+                    app.close_link_picker();
+                } else {
+                    return Ok(HandleResult::Break);
+                }
+            }
+            KeyCode::Down => app.move_link_picker_down(),
+            KeyCode::Up => app.move_link_picker_up(),
+            KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                app.move_link_picker_down()
+            }
+            KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                app.move_link_picker_up()
+            }
+            KeyCode::PageDown => app.move_link_picker_page_down(),
+            KeyCode::PageUp => app.move_link_picker_page_up(),
+            KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                app.move_link_picker_page_down()
+            }
+            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                app.move_link_picker_page_up()
+            }
+            KeyCode::Backspace => app.pop_link_picker_query(),
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                app.push_link_picker_query(c);
+            }
+            _ => state_changed = false,
+        }
     } else if app.is_file_picker_open() {
         let has_content = app.has_content();
         match key.code {
-            KeyCode::Char('?') => app.open_help(),
+            KeyCode::Char('?') if app.is_fuzzy_file_picker() || !app.is_browser_filtering() => {
+                app.open_help()
+            }
             KeyCode::Enter => {
                 state_changed = app.activate_file_picker_selection(ss, themes);
             }
-            KeyCode::Char('q') if app.is_browser_file_picker() => {
+            KeyCode::Char('/') if app.is_browser_file_picker() && !app.is_browser_filtering() => {
+                app.start_browser_filter()
+            }
+            KeyCode::Char('q') if app.is_browser_file_picker() && !app.is_browser_filtering() => {
                 if has_content {
                     app.close_file_picker();
                 } else {
                     return Ok(HandleResult::Break);
                 }
             }
-            KeyCode::Char('j') | KeyCode::Down if app.is_browser_file_picker() => {
+            KeyCode::Down if app.is_browser_file_picker() => app.move_file_picker_down(),
+            KeyCode::Char('j') if app.is_browser_file_picker() && !app.is_browser_filtering() => {
                 app.move_file_picker_down()
             }
             KeyCode::Char('j')
-                if key.modifiers.contains(KeyModifiers::CONTROL) && app.is_fuzzy_file_picker() =>
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    && (app.is_fuzzy_file_picker() || app.is_browser_filtering()) =>
             {
                 app.move_file_picker_down()
             }
-            KeyCode::Char('k') | KeyCode::Up if app.is_browser_file_picker() => {
+            KeyCode::Up if app.is_browser_file_picker() => app.move_file_picker_up(),
+            KeyCode::Char('k') if app.is_browser_file_picker() && !app.is_browser_filtering() => {
                 app.move_file_picker_up()
             }
             KeyCode::Char('k')
-                if key.modifiers.contains(KeyModifiers::CONTROL) && app.is_fuzzy_file_picker() =>
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    && (app.is_fuzzy_file_picker() || app.is_browser_filtering()) =>
             {
                 app.move_file_picker_up()
             }
@@ -204,7 +269,10 @@ pub(super) fn handle_key_event(
                 app.move_file_picker_page_up()
             }
             KeyCode::Esc => {
-                if app.is_fuzzy_file_picker() && !app.file_picker_query().is_empty() {
+                if app.is_browser_filtering() {
+                    app.exit_browser_filter();
+                    state_changed = true;
+                } else if !app.file_picker_query().is_empty() {
                     app.clear_file_picker_query();
                 } else if has_content {
                     app.close_file_picker();
@@ -212,10 +280,12 @@ pub(super) fn handle_key_event(
                     return Ok(HandleResult::Break);
                 }
             }
-            KeyCode::Char('h') | KeyCode::Left if app.is_browser_file_picker() => {
+            KeyCode::Char('h') | KeyCode::Left
+                if app.is_browser_file_picker() && !app.is_browser_filtering() =>
+            {
                 state_changed = app.open_file_picker_parent();
             }
-            KeyCode::Backspace if app.is_browser_file_picker() => {
+            KeyCode::Backspace if app.is_browser_file_picker() && !app.is_browser_filtering() => {
                 state_changed = app.open_file_picker_parent();
             }
             KeyCode::Backspace => app.pop_file_picker_query(),
@@ -226,6 +296,9 @@ pub(super) fn handle_key_event(
                     return Ok(HandleResult::Break);
                 }
             }
+            KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                state_changed = app.toggle_fuzzy_path_match();
+            }
             KeyCode::Char('p') | KeyCode::Char('q')
                 if key.modifiers.contains(KeyModifiers::CONTROL) && app.is_fuzzy_file_picker() =>
             {
@@ -234,14 +307,15 @@ pub(super) fn handle_key_event(
                 }
                 state_changed = has_content;
             }
-            KeyCode::Char('P') if app.is_browser_file_picker() => {
+            KeyCode::Char('P') if app.is_browser_file_picker() && !app.is_browser_filtering() => {
                 if has_content {
                     app.close_file_picker();
                 }
                 state_changed = has_content;
             }
             KeyCode::Char(c)
-                if app.is_fuzzy_file_picker() && !key.modifiers.contains(KeyModifiers::CONTROL) =>
+                if (app.is_fuzzy_file_picker() || app.is_browser_filtering())
+                    && !key.modifiers.contains(KeyModifiers::CONTROL) =>
             {
                 app.push_file_picker_query(c);
             }
@@ -383,6 +457,9 @@ pub(super) fn handle_key_event(
             }
             KeyCode::Char('E') => {
                 app.open_editor_picker();
+            }
+            KeyCode::Char('O') => {
+                app.open_link_picker();
             }
             KeyCode::Char('?') => {
                 app.open_help();

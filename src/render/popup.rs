@@ -32,15 +32,22 @@ const FUZZY_PICKER_FOOTER_PREVIEW: &[&str] = &[
     "ctrl+c close",
 ];
 
-const BROWSER_PICKER_FOOTER_INIT: &[&str] =
-    &["↑/↓ move", "pgup/dn", "enter open", "bsp parent", "q quit"];
+const BROWSER_PICKER_FOOTER_INIT: &[&str] = &[
+    "↑/↓ move",
+    "pgup/dn",
+    "/ filter",
+    "enter open",
+    "bsp parent",
+    "q quit",
+];
 
 const BROWSER_PICKER_FOOTER_PREVIEW: &[&str] = &[
     "↑/↓ move",
     "pgup/dn",
+    "/ filter",
     "enter open",
     "bsp parent",
-    "ctrl+c close",
+    "ctrl+c",
 ];
 
 const PICKER_FAILED_FOOTER_INIT: &[&str] = &["esc quit", "enter quit", "q quit"];
@@ -209,6 +216,10 @@ pub(super) fn render_help_popup(f: &mut Frame, app: &App) {
             Span::styled(image_state, text_style),
         ]),
         Line::from(vec![
+            Span::styled("shift+o    ", key_style),
+            Span::styled("link list", text_style),
+        ]),
+        Line::from(vec![
             Span::styled("p          ", key_style),
             Span::styled("path viewer", text_style),
             Span::raw("      "),
@@ -343,8 +354,25 @@ pub(super) fn highlighted_picker_label(
     selected: bool,
 ) -> Vec<Span<'static>> {
     let theme = app_theme();
+    highlighted_picker_label_with_fg(
+        label,
+        match_positions,
+        bg,
+        selected,
+        theme.ui.toc_primary_inactive,
+    )
+}
+
+pub(super) fn highlighted_picker_label_with_fg(
+    label: &str,
+    match_positions: &[usize],
+    bg: Color,
+    selected: bool,
+    base_fg: Color,
+) -> Vec<Span<'static>> {
+    let theme = app_theme();
     let default_style = Style::default()
-        .fg(theme.ui.toc_primary_inactive)
+        .fg(base_fg)
         .bg(bg)
         .add_modifier(if selected {
             Modifier::BOLD

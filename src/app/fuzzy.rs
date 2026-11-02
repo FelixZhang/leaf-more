@@ -110,9 +110,17 @@ pub(super) fn is_match_boundary(candidate: &str, char_pos: usize) -> bool {
         .is_some_and(|ch| matches!(ch, '-' | '_' | '.' | ' '))
 }
 
-pub(super) fn fuzzy_match(entry: &FilePickerEntry, query: &str) -> Option<(usize, Vec<usize>)> {
+pub(super) fn fuzzy_match(
+    entry: &FilePickerEntry,
+    query: &str,
+    match_path: bool,
+) -> Option<(usize, Vec<usize>)> {
     if query.is_empty() {
         return Some((0, Vec::new()));
+    }
+
+    if match_path {
+        return fuzzy_component_match(entry.label_lower(), query);
     }
 
     let (score, positions) = fuzzy_component_match(entry.file_name_lower(), query)?;

@@ -54,6 +54,11 @@ These live on the working tree, not yet in a release:
   filtering is requested.
 - `Ctrl+R` path-match toggle in the fuzzy finder — file-name matching by
   default; toggling matches the full relative path instead.
+- Link list popup (`Shift+O`) — lists every link in the document (label and
+  URL) with type-to-filter. `Enter` opens external URLs, loads local markdown
+  links in the viewer (resolved relative to the document), and scrolls to the
+  heading for internal `#anchor` links; unresolvable local targets show a
+  status-bar warning.
 
 ## Install
 
