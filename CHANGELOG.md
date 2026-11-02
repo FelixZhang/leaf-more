@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - add a `/` quick filter to the file browser picker
 - add a `Ctrl+R` toggle in the fuzzy picker to match full relative paths instead of file names only
 - add a link list popup (`Shift+O`) that lists every link in the document with type-to-filter; enter opens external links, jumps to the heading for internal `#anchor` links, and loads local markdown links in the viewer
+- add a `startup-picker` config (`fuzzy`/`browser`/`history`/`off`) controlling which picker opens when leaf starts without a file argument
 - support page jumps with `PageUp`/`PageDown` and `Ctrl+D`/`Ctrl+U` in the file and history pickers
 - retain readable image placeholders for unsupported terminals, invalid images, tables, footnotes, and `--inline` output
 

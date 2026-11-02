@@ -377,3 +377,26 @@ fn resolve_kitty_images_uses_config_then_environment() {
     assert!(test_resolve_kitty_images(Some(true)));
     std::env::remove_var("LEAF_KITTY_IMAGES");
 }
+
+#[test]
+fn parse_startup_picker_values() {
+    for (text, expected) in [
+        ("fuzzy", StartupPicker::Fuzzy),
+        ("browser", StartupPicker::Browser),
+        ("history", StartupPicker::History),
+        ("off", StartupPicker::Off),
+    ] {
+        let toml = format!("startup-picker = \"{text}\"");
+        let config: LeafConfig = toml::from_str(&toml).unwrap();
+        assert_eq!(config.startup_picker, Some(expected), "value: {text}");
+    }
+}
+
+#[test]
+fn startup_picker_defaults_to_fuzzy_and_tolerates_bad_values() {
+    let config: LeafConfig = toml::from_str("").unwrap();
+    assert_eq!(config.startup_picker, None);
+
+    let config: LeafConfig = toml::from_str("startup-picker = \"sidebar\"").unwrap();
+    assert_eq!(config.startup_picker, None);
+}

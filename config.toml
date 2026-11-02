@@ -115,3 +115,14 @@ kitty-images = false
 # Any single non-space character. Set to "" to show no prefix.
 # Default: "#"
 # hyper-link-prefix = "#"
+
+# Which picker opens when leaf starts without a file argument
+# Values:
+#   fuzzy    search files recursively (default)
+#   browser  browse the current directory
+#   history  recently opened files (needs file-history-length > 0;
+#            shows an in-popup message if history is empty or disabled)
+#   off      open with an empty viewer
+# A directory/query argument and the -p / -H flags override this setting.
+# Priority: -p / -H flags > this setting > default (fuzzy)
+# startup-picker = "fuzzy"

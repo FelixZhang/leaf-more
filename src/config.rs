@@ -44,12 +44,41 @@ pub(crate) struct LeafConfig {
     pub(crate) file_history_length: Option<i32>,
     #[serde(rename = "hyper-link-prefix")]
     pub(crate) hyper_link_prefix: Option<String>,
+    #[serde(
+        rename = "startup-picker",
+        deserialize_with = "deserialize_startup_picker"
+    )]
+    pub(crate) startup_picker: Option<StartupPicker>,
     pub(crate) themes: BTreeMap<String, CustomThemeConfig>,
     #[serde(skip)]
     pub(crate) config_dir: Option<PathBuf>,
 }
 
 pub(crate) const FILE_HISTORY_LENGTH_MAX: i32 = 50;
+
+/// Which picker opens when leaf starts without a file argument.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum StartupPicker {
+    #[default]
+    Fuzzy,
+    Browser,
+    History,
+    Off,
+}
+
+fn deserialize_startup_picker<'de, D>(deserializer: D) -> Result<Option<StartupPicker>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = toml::Value::deserialize(deserializer)?;
+    Ok(value.as_str().and_then(|s| match s {
+        "fuzzy" => Some(StartupPicker::Fuzzy),
+        "browser" => Some(StartupPicker::Browser),
+        "history" => Some(StartupPicker::History),
+        "off" => Some(StartupPicker::Off),
+        _ => None,
+    }))
+}
 
 fn deserialize_lenient_i32<'de, D>(deserializer: D) -> Result<Option<i32>, D::Error>
 where

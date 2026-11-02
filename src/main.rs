@@ -44,7 +44,7 @@ use update::run_update;
 const MAX_STDIN_BYTES: usize = 8 * 1024 * 1024;
 
 #[cfg(test)]
-pub(crate) use config::{config_path, LeafConfig};
+pub(crate) use config::{config_path, LeafConfig, StartupPicker};
 #[cfg(test)]
 pub(crate) use editor::{
     binary_name, classify, expand_editor_placeholders, format_editor_tab_title, resolve_editor,
@@ -370,6 +370,15 @@ fn main() -> Result<()> {
     let mut open_browser_picker_dir = None;
     let mut open_fuzzy_picker_dir = None;
     let mut dir_arg = None;
+    // CLI flags override the configured startup picker; without either, the
+    // bare no-file launch uses `startup-picker` from the config (fuzzy).
+    let startup_picker = if picker {
+        config::StartupPicker::Browser
+    } else if open_history_picker {
+        config::StartupPicker::History
+    } else {
+        user_config.startup_picker.unwrap_or_default()
+    };
     let (src, filename, filepath) = if let Some(f) = file_arg {
         let path = PathBuf::from(&f);
         if picker && !path.is_dir() {
@@ -401,10 +410,11 @@ fn main() -> Result<()> {
     } else if io::stdin().is_terminal() {
         let cwd = std::env::current_dir().context("Cannot read current directory")?;
         let label = app::path_label(&cwd);
-        if picker {
-            open_browser_picker_dir = Some(cwd);
-        } else {
-            open_fuzzy_picker_dir = Some(cwd);
+        match startup_picker {
+            config::StartupPicker::Browser => open_browser_picker_dir = Some(cwd),
+            config::StartupPicker::History => open_history_picker = true,
+            config::StartupPicker::Fuzzy => open_fuzzy_picker_dir = Some(cwd),
+            config::StartupPicker::Off => {}
         }
         (String::new(), label, None)
     } else {

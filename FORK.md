@@ -59,6 +59,9 @@ These live on the working tree, not yet in a release:
   links in the viewer (resolved relative to the document), and scrolls to the
   heading for internal `#anchor` links; unresolvable local targets show a
   status-bar warning.
+- `startup-picker` config — which picker opens when leaf starts without a
+  file argument: `fuzzy` (default), `browser`, `history`, or `off`. The
+  `-p` / `-H` flags still override it.
 
 ## Install
 
